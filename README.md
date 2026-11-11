@@ -103,8 +103,13 @@ Use the platform path-list separator (`:` on macOS/Linux, `;` on Windows). Both 
 - Symlinks are rejected at discovery and inspection time.
 - Path traversal is validated before any file operation.
 - Output directory path is canonicalized and checked against the declared root before each write.
-- Output files are published via atomic hard-link (no silent overwrite).
-- Sources are fingerprinted before encode and re-checked before publish; a changed source aborts the job.
+- Verified temporary outputs are published without overwriting an existing destination, including on filesystems without hard-link support. Incomplete outputs are never copied into the visible final filename.
+- Source content is checked with SHA256 before processing and again before publication; detected changes abort the job.
+- A cross-process file lease prevents a second Mar2i instance from recovering or processing a batch currently owned by another instance.
+
+## Release readiness
+
+The current application is **not yet a v1.0 Release Candidate**. See [the release readiness evidence](docs/RELEASE_READINESS.md) for verified tests, outstanding native E2E requirements, cross-platform gaps and the multimedia redistribution blocker. Production installers and offline media tool bundles are not yet validated.
 
 ## License
 
