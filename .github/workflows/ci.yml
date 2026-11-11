@@ -56,21 +56,25 @@ jobs:
       - name: Clippy (core)
         run: cargo clippy --all-targets --manifest-path core/Cargo.toml -- -D warnings
 
-      - name: Install FFmpeg for integration tests
+      - name: Setup Bun for CI-only media tools
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install FFmpeg and FFprobe for integration tests
         timeout-minutes: 5
         run: |
-          # GitHub runner images list a slow Azure mirror before the official Ubuntu fallback.
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
-          fi
-          sudo DEBIAN_FRONTEND=noninteractive apt-get \
-            -o Acquire::Retries=1 \
-            -o Acquire::http::Timeout=10 \
-            -o Acquire::https::Timeout=10 \
-            install -y --no-install-recommends ffmpeg
+          # Version-pinned test binaries only; they are not part of desktop distribution.
+          mkdir -p "$RUNNER_TEMP/mar2i-media-tools"
+          cd "$RUNNER_TEMP/mar2i-media-tools"
+          bun init -y
+          bun add --exact @ffmpeg-installer/ffmpeg@1.1.0 @ffprobe-installer/ffprobe@2.1.2
+          FFMPEG_PATH="$(bun -e 'process.stdout.write(require("@ffmpeg-installer/ffmpeg").path)')"
+          FFPROBE_PATH="$(bun -e 'process.stdout.write(require("@ffprobe-installer/ffprobe").path)')"
+          test -x "$FFMPEG_PATH"
+          test -x "$FFPROBE_PATH"
+          "$FFMPEG_PATH" -version > /dev/null
+          "$FFPROBE_PATH" -version > /dev/null
+          echo "MAR2I_TEST_FFMPEG=$FFMPEG_PATH" >> "$GITHUB_ENV"
+          echo "MAR2I_TEST_FFPROBE=$FFPROBE_PATH" >> "$GITHUB_ENV"
 
       - name: Tests (core)
-        env:
-          MAR2I_TEST_FFMPEG: /usr/bin/ffmpeg
-          MAR2I_TEST_FFPROBE: /usr/bin/ffprobe
         run: cargo test --manifest-path core/Cargo.toml
