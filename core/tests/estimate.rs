@@ -26,6 +26,10 @@ fn analytical_estimate_computes_logical_savings_by_codec_and_crf() -> anyhow::Re
         chapter_count: 0,
         rotation: None,
         original_format: "mov".into(),
+        video_details: None,
+        audio_streams: vec![],
+        subtitle_streams: vec![],
+        start_time: None,
     };
 
     let est_hevc = analytical_estimate(&media, "hevc", 22)?;
@@ -74,6 +78,10 @@ fn missing_encoder_does_not_invent_measured_savings() {
         chapter_count: 0,
         rotation: None,
         original_format: "mov".into(),
+        video_details: None,
+        audio_streams: vec![],
+        subtitle_streams: vec![],
+        start_time: None,
     };
 
     let estimate = estimate_video_size(

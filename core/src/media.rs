@@ -1,12 +1,45 @@
 use crate::policy::MediaProfile;
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct VideoDetails {
+    pub profile: Option<String>,
+    pub bit_depth: Option<u8>,
+    pub sample_aspect_ratio: Option<String>,
+    pub display_aspect_ratio: Option<String>,
+    pub color_range: Option<String>,
+    pub color_space: Option<String>,
+    pub color_primaries: Option<String>,
+    pub color_transfer: Option<String>,
+    pub interlaced: bool,
+    pub time_base: Option<String>,
+    pub start_time: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct AudioStreamInfo {
+    pub codec: String,
+    pub channels: u32,
+    pub channel_layout: Option<String>,
+    pub sample_rate: Option<u32>,
+    pub language: Option<String>,
+    pub bit_rate: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct SubtitleStreamInfo {
+    pub codec: String,
+    pub language: Option<String>,
+    pub is_default: bool,
+    pub is_forced: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InspectedMedia {
     pub profile: MediaProfile,
     pub duration: f64,
@@ -16,6 +49,12 @@ pub struct InspectedMedia {
     pub chapter_count: usize,
     pub rotation: Option<i32>,
     pub original_format: String,
+    pub video_details: Option<VideoDetails>,
+    #[serde(default)]
+    pub audio_streams: Vec<AudioStreamInfo>,
+    #[serde(default)]
+    pub subtitle_streams: Vec<SubtitleStreamInfo>,
+    pub start_time: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,22 +72,75 @@ struct ProbeFormat {
     format_name: String,
     duration: Option<String>,
     bit_rate: Option<String>,
+    start_time: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct ProbeStream {
     codec_type: Option<String>,
     codec_name: Option<String>,
+    profile: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
+    sample_aspect_ratio: Option<String>,
+    display_aspect_ratio: Option<String>,
     r_frame_rate: Option<String>,
     avg_frame_rate: Option<String>,
     bit_rate: Option<String>,
+    bits_per_raw_sample: Option<String>,
     pix_fmt: Option<String>,
+    color_range: Option<String>,
+    color_space: Option<String>,
     color_transfer: Option<String>,
+    color_primaries: Option<String>,
+    field_order: Option<String>,
+    time_base: Option<String>,
+    start_time: Option<String>,
+    channels: Option<u32>,
+    channel_layout: Option<String>,
+    sample_rate: Option<String>,
     duration: Option<String>,
+    disposition: Option<Value>,
     tags: Option<Value>,
     side_data_list: Option<Vec<Value>>,
+}
+
+fn bit_depth(stream: &ProbeStream) -> Option<u8> {
+    if let Some(raw) = stream
+        .bits_per_raw_sample
+        .as_deref()
+        .and_then(|b| b.parse::<u8>().ok())
+        .filter(|&r| r > 0)
+    {
+        return Some(raw);
+    }
+    if let Some(pix) = stream.pix_fmt.as_deref() {
+        if pix.contains("16") {
+            return Some(16);
+        }
+        if pix.contains("12") {
+            return Some(12);
+        }
+        if pix.contains("10") {
+            return Some(10);
+        }
+        if pix.starts_with("yuv420p")
+            || pix.starts_with("yuv422p")
+            || pix.starts_with("yuv444p")
+            || pix.starts_with("rgb")
+            || pix.starts_with("bgr")
+        {
+            return Some(8);
+        }
+    }
+    None
+}
+
+fn is_interlaced(stream: &ProbeStream) -> bool {
+    matches!(
+        stream.field_order.as_deref(),
+        Some("tt" | "bb" | "tb" | "bt" | "interlaced")
+    )
 }
 
 fn rational_rate(value: Option<&str>) -> Option<f64> {
@@ -170,6 +262,74 @@ pub fn inspect(ffprobe: &Path, path: &Path) -> Result<InspectedMedia> {
         video_count: videos.len(),
     };
 
+    let video_details = VideoDetails {
+        profile: video.profile.clone(),
+        bit_depth: bit_depth(video),
+        sample_aspect_ratio: video.sample_aspect_ratio.clone(),
+        display_aspect_ratio: video.display_aspect_ratio.clone(),
+        color_range: video.color_range.clone(),
+        color_space: video.color_space.clone(),
+        color_primaries: video.color_primaries.clone(),
+        color_transfer: video.color_transfer.clone(),
+        interlaced: is_interlaced(video),
+        time_base: video.time_base.clone(),
+        start_time: video.start_time.clone(),
+    };
+
+    let audio_streams: Vec<AudioStreamInfo> = audios
+        .iter()
+        .map(|stream| AudioStreamInfo {
+            codec: stream.codec_name.clone().unwrap_or_default(),
+            channels: stream.channels.unwrap_or(0),
+            channel_layout: stream.channel_layout.clone(),
+            sample_rate: stream.sample_rate.as_deref().and_then(|r| r.parse().ok()),
+            language: stream
+                .tags
+                .as_ref()
+                .and_then(|t| t.get("language"))
+                .and_then(Value::as_str)
+                .map(|s| s.to_string()),
+            bit_rate: stream.bit_rate.as_deref().and_then(|b| b.parse().ok()),
+        })
+        .collect();
+
+    let subtitle_streams: Vec<SubtitleStreamInfo> = parsed
+        .streams
+        .iter()
+        .filter(|stream| stream.codec_type.as_deref() == Some("subtitle"))
+        .map(|stream| {
+            let is_default = stream
+                .disposition
+                .as_ref()
+                .and_then(|d| d.get("default"))
+                .and_then(|v| v.as_i64())
+                .is_some_and(|v| v == 1);
+            let is_forced = stream
+                .disposition
+                .as_ref()
+                .and_then(|d| d.get("forced"))
+                .and_then(|v| v.as_i64())
+                .is_some_and(|v| v == 1);
+            SubtitleStreamInfo {
+                codec: stream.codec_name.clone().unwrap_or_default(),
+                language: stream
+                    .tags
+                    .as_ref()
+                    .and_then(|t| t.get("language"))
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string()),
+                is_default,
+                is_forced,
+            }
+        })
+        .collect();
+
+    let start_time = format
+        .start_time
+        .as_deref()
+        .or(video.start_time.as_deref())
+        .and_then(|s| s.parse::<f64>().ok());
+
     Ok(InspectedMedia {
         profile,
         duration,
@@ -179,5 +339,9 @@ pub fn inspect(ffprobe: &Path, path: &Path) -> Result<InspectedMedia> {
         chapter_count: parsed.chapters.len(),
         rotation: rotation(video),
         original_format: format.format_name,
+        video_details: Some(video_details),
+        audio_streams,
+        subtitle_streams,
+        start_time,
     })
 }
