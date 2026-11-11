@@ -1,7 +1,9 @@
 use crate::policy::Mode;
+use crate::runner::PartialOutputRegistry;
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -59,18 +61,26 @@ fn job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
     })
 }
 
-fn cleanup_partial_outputs(root: &Path) {
-    if !root.is_dir() {
-        return;
+fn validated_partial_path(root: &Path, path: &Path) -> Result<PathBuf> {
+    let name = path
+        .file_name()
+        .context("temporary output has no filename")?;
+    let filename = name.to_string_lossy();
+    if !filename.starts_with(".mar2i-partial-")
+        || ![".copy", ".mkv", ".mp4", ".webm"]
+            .iter()
+            .any(|suffix| filename.ends_with(suffix))
+    {
+        bail!("invalid registered temporary output name");
     }
-    for entry in walkdir::WalkDir::new(root).into_iter().flatten() {
-        if entry.file_type().is_file() {
-            let name = entry.file_name().to_string_lossy();
-            if name.starts_with(".mar2i-partial-") {
-                let _ = fs::remove_file(entry.path());
-            }
-        }
+    let parent = fs::canonicalize(path.parent().context("temporary output has no parent")?)?;
+    if !parent.starts_with(root) {
+        bail!("registered temporary output escapes batch destination");
     }
+    if !fs::symlink_metadata(path)?.file_type().is_file() {
+        bail!("registered temporary output is not a regular file");
+    }
+    Ok(parent.join(name))
 }
 
 const JOB_COLUMNS: &str = "id, relative, source, input_bytes, modified_ns, status, output, output_bytes, reason, quality, elapsed_ms";
@@ -118,6 +128,9 @@ impl BatchQueue {
                 elapsed_ms INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, id);
+            CREATE TABLE IF NOT EXISTS partial_outputs (
+                path TEXT PRIMARY KEY NOT NULL
+            );
         ",
         )?;
         let expected = (
@@ -246,6 +259,29 @@ impl BatchQueue {
         Ok(PathBuf::from(root))
     }
 
+    fn cleanup_registered_partials(&self, connection: &Connection) -> Result<()> {
+        let root = fs::canonicalize(self.output_root()?)?;
+        let paths = {
+            let mut statement = connection.prepare("SELECT path FROM partial_outputs")?;
+            statement
+                .query_map([], |row| row.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        for registered in paths {
+            let path = Path::new(&registered);
+            match fs::symlink_metadata(path) {
+                Ok(_) => {
+                    validated_partial_path(&root, path)?;
+                    fs::remove_file(path)?;
+                }
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+            connection.execute("DELETE FROM partial_outputs WHERE path=?1", [&registered])?;
+        }
+        Ok(())
+    }
+
     pub fn recover(&self) -> Result<usize> {
         let connection = self.connect()?;
         let count = connection.execute(
@@ -253,9 +289,7 @@ impl BatchQueue {
              WHERE status IN ('processing','verifying')",
             [],
         )?;
-        if let Ok(root) = self.output_root() {
-            cleanup_partial_outputs(&root);
-        }
+        self.cleanup_registered_partials(&connection)?;
         Ok(count)
     }
 
@@ -267,5 +301,27 @@ impl BatchQueue {
             .query_map([], job_from_row)?
             .collect::<rusqlite::Result<Vec<Job>>>()?;
         Ok(jobs)
+    }
+}
+
+impl PartialOutputRegistry for BatchQueue {
+    fn register_partial(&self, path: &Path) -> Result<()> {
+        let root = fs::canonicalize(self.output_root()?)?;
+        validated_partial_path(&root, path)?;
+        let name = path
+            .to_str()
+            .context("temporary output path must be valid UTF-8")?;
+        let connection = self.connect()?;
+        connection.execute("INSERT INTO partial_outputs(path) VALUES(?1)", [name])?;
+        Ok(())
+    }
+
+    fn unregister_partial(&self, path: &Path) -> Result<()> {
+        let name = path
+            .to_str()
+            .context("temporary output path must be valid UTF-8")?;
+        self.connect()?
+            .execute("DELETE FROM partial_outputs WHERE path=?1", [name])?;
+        Ok(())
     }
 }

@@ -10,7 +10,54 @@ use std::io::{BufReader, Read};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{Duration, Instant};
-use tempfile::Builder;
+use tempfile::{Builder, NamedTempFile};
+
+pub trait PartialOutputRegistry {
+    fn register_partial(&self, path: &Path) -> Result<()>;
+    fn unregister_partial(&self, path: &Path) -> Result<()>;
+}
+
+pub struct RunExecution<'a> {
+    pub control: Option<&'a Control>,
+    pub registry: Option<&'a dyn PartialOutputRegistry>,
+}
+
+struct RegisteredTemporary<'a> {
+    file: Option<NamedTempFile>,
+    registry: Option<&'a dyn PartialOutputRegistry>,
+}
+
+impl<'a> RegisteredTemporary<'a> {
+    fn new(file: NamedTempFile, registry: Option<&'a dyn PartialOutputRegistry>) -> Result<Self> {
+        if let Some(registry) = registry {
+            registry.register_partial(file.path())?;
+        }
+        Ok(Self {
+            file: Some(file),
+            registry,
+        })
+    }
+
+    fn path(&self) -> &Path {
+        self.file
+            .as_ref()
+            .expect("temporary output exists until guard drop")
+            .path()
+    }
+}
+
+impl Drop for RegisteredTemporary<'_> {
+    fn drop(&mut self) {
+        if let Some(file) = self.file.take() {
+            let path = file.path().to_path_buf();
+            if file.close().is_ok()
+                && let Some(registry) = self.registry
+            {
+                let _ = registry.unregister_partial(&path);
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum RunOutcome {
@@ -400,6 +447,31 @@ pub fn run_one_with_options(
     options: RunOptions<'_>,
     control: Option<&Control>,
 ) -> Result<RunOutcome> {
+    run_one_with_registry(
+        ffmpeg,
+        ffprobe,
+        source,
+        relative,
+        output_root,
+        options,
+        RunExecution {
+            control,
+            registry: None,
+        },
+    )
+}
+
+pub fn run_one_with_registry(
+    ffmpeg: &Path,
+    ffprobe: &Path,
+    source: &Path,
+    relative: &Path,
+    output_root: &Path,
+    options: RunOptions<'_>,
+    execution: RunExecution<'_>,
+) -> Result<RunOutcome> {
+    let control = execution.control;
+    let registry = execution.registry;
     if control.is_some_and(|c| c.is_cancelled()) {
         bail!("batch cancelled before processing");
     }
@@ -458,6 +530,7 @@ pub fn run_one_with_options(
         .prefix(".mar2i-partial-")
         .suffix(suffix)
         .tempfile_in(parent)?;
+    let tempfile = RegisteredTemporary::new(tempfile, registry)?;
     let temporary = tempfile.path();
     let quality = match decision {
         Decision::Copy { ref reason } => {
