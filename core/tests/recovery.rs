@@ -1,5 +1,6 @@
 use mar2i_core::policy::Mode;
 use mar2i_core::queue::{BatchQueue, JobCompletion};
+use mar2i_core::runner::PartialOutputRegistry;
 use mar2i_core::worker::{Control, ResourceProfile, modified_ns, run_batch};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -42,6 +43,86 @@ fn create_synthetic_video(path: &Path, duration_secs: f32) {
 }
 
 #[test]
+fn recovery_preserves_unregistered_files_even_when_they_match_temp_prefix() {
+    let tmp = tempdir().unwrap();
+    let input = tmp.path().join("source");
+    let output = tmp.path().join("dest");
+    fs::create_dir_all(&input).unwrap();
+    fs::create_dir_all(&output).unwrap();
+
+    let unrelated = output.join(".mar2i-partial-personal-recording.mkv");
+    let original = b"user-owned file, not an application temporary output";
+    fs::write(&unrelated, original).unwrap();
+
+    let queue = BatchQueue::open(
+        &tmp.path().join("batch.sqlite"),
+        &input,
+        &output,
+        Mode::Archival,
+    )
+    .unwrap();
+    assert_eq!(queue.recover().unwrap(), 0);
+    assert_eq!(fs::read(&unrelated).unwrap(), original);
+}
+
+#[test]
+fn registration_rejects_temporary_paths_outside_the_batch_destination() {
+    let tmp = tempdir().unwrap();
+    let input = tmp.path().join("source");
+    let output = tmp.path().join("dest");
+    fs::create_dir_all(&input).unwrap();
+    fs::create_dir_all(&output).unwrap();
+
+    let unrelated = tmp.path().join(".mar2i-partial-private.mkv");
+    fs::write(&unrelated, b"preserve").unwrap();
+    let queue = BatchQueue::open(
+        &tmp.path().join("batch.sqlite"),
+        &input,
+        &output,
+        Mode::Archival,
+    )
+    .unwrap();
+    assert!(queue.register_partial(&unrelated).is_err());
+    queue.recover().unwrap();
+    assert_eq!(fs::read(&unrelated).unwrap(), b"preserve");
+}
+
+#[cfg(unix)]
+#[test]
+fn recovery_never_follows_a_replaced_registered_symlink() {
+    let tmp = tempdir().unwrap();
+    let input = tmp.path().join("source");
+    let output = tmp.path().join("dest");
+    fs::create_dir_all(&input).unwrap();
+    fs::create_dir_all(&output).unwrap();
+
+    let protected = tmp.path().join("protected.mp4");
+    fs::write(&protected, b"source must survive").unwrap();
+    let partial = output.join(".mar2i-partial-owned.mkv");
+    fs::write(&partial, b"temporary").unwrap();
+
+    let queue = BatchQueue::open(
+        &tmp.path().join("batch.sqlite"),
+        &input,
+        &output,
+        Mode::Archival,
+    )
+    .unwrap();
+    queue.register_partial(&partial).unwrap();
+    fs::remove_file(&partial).unwrap();
+    std::os::unix::fs::symlink(&protected, &partial).unwrap();
+
+    assert!(queue.recover().is_err());
+    assert_eq!(fs::read(&protected).unwrap(), b"source must survive");
+    assert!(
+        fs::symlink_metadata(&partial)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+}
+
+#[test]
 fn recover_cleans_orphaned_partial_temp_files_from_crashed_run() {
     let tmp = tempdir().unwrap();
     let input = tmp.path().join("source");
@@ -75,6 +156,8 @@ fn recover_cleans_orphaned_partial_temp_files_from_crashed_run() {
 
     assert!(orphan1.is_file());
     assert!(orphan2.is_file());
+    queue.register_partial(&orphan1).unwrap();
+    queue.register_partial(&orphan2).unwrap();
 
     // Run recovery
     let recovered_count = queue.recover().unwrap();

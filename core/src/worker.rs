@@ -1,6 +1,6 @@
 use crate::policy::{CodecPreference, Mode};
 use crate::queue::{BatchQueue, Job, JobCompletion};
-use crate::runner::{RunOptions, RunOutcome, run_one_with_options};
+use crate::runner::{RunExecution, RunOptions, RunOutcome, run_one_with_registry};
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::Path;
@@ -186,14 +186,17 @@ pub fn process_next(
 ) -> Result<()> {
     let start = Instant::now();
     let result = check_job_source(&job).and_then(|_| {
-        run_one_with_options(
+        run_one_with_registry(
             ffmpeg,
             ffprobe,
             Path::new(&job.source),
             Path::new(&job.relative),
             output,
             options,
-            Some(control),
+            RunExecution {
+                control: Some(control),
+                registry: Some(queue),
+            },
         )
     });
     let elapsed = start.elapsed().as_millis().min(i64::MAX as u128) as u64;
