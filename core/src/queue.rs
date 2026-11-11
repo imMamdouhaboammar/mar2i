@@ -190,10 +190,12 @@ impl BatchQueue {
     }
 
     pub fn finish(&self, id: i64, completion: JobCompletion<'_>) -> Result<()> {
-        if !matches!(completion.status, "completed" | "skipped" | "failed")
-            || completion
-                .bytes
-                .is_some_and(|value| value > i64::MAX as u64)
+        if !matches!(
+            completion.status,
+            "completed" | "skipped" | "failed" | "interrupted"
+        ) || completion
+            .bytes
+            .is_some_and(|value| value > i64::MAX as u64)
             || completion.elapsed_ms > i64::MAX as u64
         {
             bail!("invalid job outcome");

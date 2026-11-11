@@ -1,6 +1,6 @@
 use crate::policy::Mode;
 use crate::queue::{BatchQueue, Job, JobCompletion};
-use crate::runner::{RunOutcome, run_one};
+use crate::runner::{RunOutcome, run_one_with_control};
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::Path;
@@ -17,11 +17,23 @@ pub enum ResourceProfile {
     Maximum,
 }
 
+pub struct ProcessGuard<'a> {
+    control: &'a Control,
+    pid: u32,
+}
+
+impl Drop for ProcessGuard<'_> {
+    fn drop(&mut self) {
+        self.control.unregister_process(self.pid);
+    }
+}
+
 pub struct Control {
     paused: AtomicBool,
     cancelled: AtomicBool,
     wake: Condvar,
     mutex: Mutex<()>,
+    active_processes: Mutex<Vec<u32>>,
 }
 
 impl Default for Control {
@@ -31,9 +43,20 @@ impl Default for Control {
             cancelled: AtomicBool::new(false),
             wake: Condvar::new(),
             mutex: Mutex::new(()),
+            active_processes: Mutex::new(Vec::new()),
         }
     }
 }
+
+#[cfg(unix)]
+fn terminate_pid_graceful(pid: u32) {
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+    }
+}
+
+#[cfg(not(unix))]
+fn terminate_pid_graceful(_pid: u32) {}
 
 impl Control {
     pub fn pause(&self) {
@@ -48,6 +71,10 @@ impl Control {
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::SeqCst);
         self.wake.notify_all();
+        let pids = self.active_pids();
+        for pid in pids {
+            terminate_pid_graceful(pid);
+        }
     }
 
     pub fn is_paused(&self) -> bool {
@@ -56,6 +83,32 @@ impl Control {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
+    }
+
+    pub fn register_process(&self, pid: u32) -> ProcessGuard<'_> {
+        let mut list = self
+            .active_processes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        list.push(pid);
+        ProcessGuard { control: self, pid }
+    }
+
+    pub fn unregister_process(&self, pid: u32) {
+        let mut list = self
+            .active_processes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(pos) = list.iter().position(|&p| p == pid) {
+            list.swap_remove(pos);
+        }
+    }
+
+    pub fn active_pids(&self) -> Vec<u32> {
+        self.active_processes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     fn wait_until_active(&self) -> bool {
@@ -112,16 +165,18 @@ fn process_next(
     output: &Path,
     mode: Mode,
     job: Job,
+    control: &Control,
 ) -> Result<()> {
     let start = Instant::now();
     let result = check_job_source(&job).and_then(|_| {
-        run_one(
+        run_one_with_control(
             ffmpeg,
             ffprobe,
             Path::new(&job.source),
             Path::new(&job.relative),
             output,
             mode,
+            Some(control),
         )
     });
     let elapsed = start.elapsed().as_millis().min(i64::MAX as u128) as u64;
@@ -168,17 +223,33 @@ fn process_next(
                 elapsed_ms: elapsed,
             },
         ),
-        Err(error) => queue.finish(
-            job.id,
-            JobCompletion {
-                status: "failed",
-                output: None,
-                bytes: None,
-                quality: None,
-                reason: Some(&format!("{error:#}")),
-                elapsed_ms: elapsed,
-            },
-        ),
+        Err(error) => {
+            if control.is_cancelled() {
+                queue.finish(
+                    job.id,
+                    JobCompletion {
+                        status: "interrupted",
+                        output: None,
+                        bytes: None,
+                        quality: None,
+                        reason: Some("batch cancelled by user during execution"),
+                        elapsed_ms: elapsed,
+                    },
+                )
+            } else {
+                queue.finish(
+                    job.id,
+                    JobCompletion {
+                        status: "failed",
+                        output: None,
+                        bytes: None,
+                        quality: None,
+                        reason: Some(&format!("{error:#}")),
+                        elapsed_ms: elapsed,
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -213,7 +284,7 @@ pub fn run_batch(
                         let Some(job) = queue.claim_next()? else {
                             break;
                         };
-                        process_next(queue, ffmpeg, ffprobe, output, mode, job)?;
+                        process_next(queue, ffmpeg, ffprobe, output, mode, job, control)?;
                     }
                     Ok(())
                 })

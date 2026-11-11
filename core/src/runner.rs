@@ -1,11 +1,13 @@
 use crate::media::{InspectedMedia, inspect};
 use crate::policy::{Decision, Mode, choose_plan};
+use crate::worker::Control;
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output};
+use std::time::{Duration, Instant};
 use tempfile::Builder;
 
 #[derive(Debug, Clone)]
@@ -36,6 +38,132 @@ fn checked_command(result: Output, operation: &str) -> Result<Output> {
         bail!("{operation} failed: {truncated}");
     }
     Ok(result)
+}
+
+pub fn terminate_child_bounded(child: &mut std::process::Child) -> Result<()> {
+    if let Ok(Some(_)) = child.try_wait() {
+        return Ok(());
+    }
+
+    let pid = child.id();
+
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+    }
+    #[cfg(windows)]
+    {
+        let _ = child.kill();
+    }
+
+    let grace_limit = Duration::from_millis(1000);
+    let start = Instant::now();
+    let poll = Duration::from_millis(20);
+
+    while start.elapsed() < grace_limit {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => std::thread::sleep(poll),
+            Err(_) => return Ok(()),
+        }
+    }
+
+    let _ = child.kill();
+
+    let reap_deadline = Instant::now() + Duration::from_millis(2000);
+    while Instant::now() < reap_deadline {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) => std::thread::sleep(poll),
+            Err(_) => return Ok(()),
+        }
+    }
+    let _ = child.wait();
+    Ok(())
+}
+
+pub fn run_command_cancellable(
+    command: &mut Command,
+    operation: &str,
+    control: Option<&Control>,
+) -> Result<Output> {
+    if control.is_some_and(|c| c.is_cancelled()) {
+        bail!("batch cancelled before starting {operation}");
+    }
+
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+
+    let mut child = command
+        .spawn()
+        .with_context(|| format!("failed to spawn process for {operation}"))?;
+    let pid = child.id();
+    let _guard = control.map(|ctrl| ctrl.register_process(pid));
+
+    let mut stdout_handle = child.stdout.take();
+    let mut stderr_handle = child.stderr.take();
+
+    let stdout_thread = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
+        let mut buffer = Vec::new();
+        if let Some(mut stream) = stdout_handle.take() {
+            stream.read_to_end(&mut buffer)?;
+        }
+        Ok(buffer)
+    });
+
+    let stderr_thread = std::thread::spawn(move || -> std::io::Result<Vec<u8>> {
+        let mut buffer = Vec::new();
+        if let Some(mut stream) = stderr_handle.take() {
+            stream.read_to_end(&mut buffer)?;
+        }
+        Ok(buffer)
+    });
+
+    let poll_interval = Duration::from_millis(30);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if control.is_some_and(|c| c.is_cancelled()) {
+                    let _ = stdout_thread.join();
+                    let _ = stderr_thread.join();
+                    bail!("batch cancelled by user during {operation}");
+                }
+                break status;
+            }
+            Ok(None) => {
+                if control.is_some_and(|c| c.is_cancelled()) {
+                    terminate_child_bounded(&mut child)?;
+                    let _ = stdout_thread.join();
+                    let _ = stderr_thread.join();
+                    bail!("batch cancelled by user during {operation}");
+                }
+                std::thread::sleep(poll_interval);
+            }
+            Err(err) => {
+                let _ = terminate_child_bounded(&mut child);
+                let _ = stdout_thread.join();
+                let _ = stderr_thread.join();
+                return Err(err).context(format!("error polling process for {operation}"));
+            }
+        }
+    };
+
+    let stdout = stdout_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("stdout reader thread panicked"))?
+        .context("failed to read process stdout")?;
+    let stderr = stderr_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("stderr reader thread panicked"))?
+        .context("failed to read process stderr")?;
+
+    let output = Output {
+        status,
+        stdout,
+        stderr,
+    };
+
+    checked_command(output, operation)
 }
 
 fn validated_relative(relative: &Path) -> Result<()> {
@@ -80,23 +208,23 @@ fn make_output_name(relative: &Path, extension: &str, copy: bool) -> Result<Path
     Ok(relative.with_file_name(output))
 }
 
-fn verify_decode(ffmpeg: &Path, output: &Path) -> Result<()> {
-    let result = Command::new(ffmpeg)
+fn verify_decode(ffmpeg: &Path, output: &Path, control: Option<&Control>) -> Result<()> {
+    let mut command = Command::new(ffmpeg);
+    command
         .args(["-hide_banner", "-nostdin", "-v", "error", "-xerror", "-i"])
         .arg(output)
-        .args(["-map", "0:v:0", "-f", "null", "-"])
-        .output()?;
-    checked_command(result, "output decode verification")?;
+        .args(["-map", "0:v:0", "-f", "null", "-"]);
+    run_command_cancellable(&mut command, "output decode verification", control)?;
     Ok(())
 }
 
-fn frame_hashes(ffmpeg: &Path, source: &Path) -> Result<Vec<String>> {
-    let result = Command::new(ffmpeg)
+fn frame_hashes(ffmpeg: &Path, source: &Path, control: Option<&Control>) -> Result<Vec<String>> {
+    let mut command = Command::new(ffmpeg);
+    command
         .args(["-hide_banner", "-nostdin", "-v", "error", "-i"])
         .arg(source)
-        .args(["-map", "0:v:0", "-f", "framemd5", "-"])
-        .output()?;
-    let result = checked_command(result, "frame hash verification")?;
+        .args(["-map", "0:v:0", "-f", "framemd5", "-"]);
+    let result = run_command_cancellable(&mut command, "frame hash verification", control)?;
     let hashes: Vec<String> = String::from_utf8(result.stdout)?
         .lines()
         .filter(|line| !line.starts_with('#') && !line.trim().is_empty())
@@ -108,15 +236,27 @@ fn frame_hashes(ffmpeg: &Path, source: &Path) -> Result<Vec<String>> {
     Ok(hashes)
 }
 
-fn ssim_score(ffmpeg: &Path, source: &Path, output: &Path) -> Result<f64> {
-    let result = Command::new(ffmpeg)
+fn ssim_score(
+    ffmpeg: &Path,
+    source: &Path,
+    output: &Path,
+    control: Option<&Control>,
+) -> Result<f64> {
+    let mut command = Command::new(ffmpeg);
+    command
         .args(["-hide_banner", "-nostdin", "-i"])
         .arg(source)
         .arg("-i")
         .arg(output)
-        .args(["-filter_complex", "[0:v:0]setpts=PTS-STARTPTS,format=yuv420p[ref];[1:v:0]setpts=PTS-STARTPTS,format=yuv420p[test];[ref][test]ssim", "-an", "-f", "null", "-"])
-        .output()?;
-    let result = checked_command(result, "SSIM measurement")?;
+        .args([
+            "-filter_complex",
+            "[0:v:0]setpts=PTS-STARTPTS,format=yuv420p[ref];[1:v:0]setpts=PTS-STARTPTS,format=yuv420p[test];[ref][test]ssim",
+            "-an",
+            "-f",
+            "null",
+            "-",
+        ]);
+    let result = run_command_cancellable(&mut command, "SSIM measurement", control)?;
     let log = String::from_utf8_lossy(&result.stderr);
     let value = log
         .rsplit("All:")
@@ -177,6 +317,21 @@ pub fn run_one(
     output_root: &Path,
     mode: Mode,
 ) -> Result<RunOutcome> {
+    run_one_with_control(ffmpeg, ffprobe, source, relative, output_root, mode, None)
+}
+
+pub fn run_one_with_control(
+    ffmpeg: &Path,
+    ffprobe: &Path,
+    source: &Path,
+    relative: &Path,
+    output_root: &Path,
+    mode: Mode,
+    control: Option<&Control>,
+) -> Result<RunOutcome> {
+    if control.is_some_and(|c| c.is_cancelled()) {
+        bail!("batch cancelled before processing");
+    }
     validated_relative(relative)?;
     let input = inspect(ffprobe, source)?;
     let starting_metadata = fs::symlink_metadata(source)?;
@@ -221,6 +376,9 @@ pub fn run_one(
     let temporary = tempfile.path();
     let quality = match decision {
         Decision::Copy { ref reason } => {
+            if control.is_some_and(|c| c.is_cancelled()) {
+                bail!("batch cancelled by user during copy");
+            }
             fs::copy(source, temporary)?;
             if copy_hash(source)? != copy_hash(temporary)? {
                 bail!("copied bytes differ from original");
@@ -229,7 +387,8 @@ pub fn run_one(
         }
         Decision::Encode { codec: "ffv1", .. } => {
             // Use explicit argv, never invoke a shell; passthrough retains timestamps.
-            let result = Command::new(ffmpeg)
+            let mut command = Command::new(ffmpeg);
+            command
                 .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
                 .arg(source)
                 .args([
@@ -258,13 +417,12 @@ pub fn run_one(
                     "-c:s",
                     "copy",
                 ])
-                .arg(temporary)
-                .output()?;
-            checked_command(result, "lossless archival encoding")?;
-            verify_decode(ffmpeg, temporary)?;
+                .arg(temporary);
+            run_command_cancellable(&mut command, "lossless archival encoding", control)?;
+            verify_decode(ffmpeg, temporary, control)?;
             let accepted = inspect(ffprobe, temporary)?;
             verify_stream_contract(&input, &accepted, mode)?;
-            if frame_hashes(ffmpeg, source)? != frame_hashes(ffmpeg, temporary)? {
+            if frame_hashes(ffmpeg, source, control)? != frame_hashes(ffmpeg, temporary, control)? {
                 bail!("decoded archival frames are not identical");
             }
             "decoded-frame hashes identical".to_owned()
@@ -274,7 +432,8 @@ pub fn run_one(
             crf,
             ..
         } => {
-            let result = Command::new(ffmpeg)
+            let mut command = Command::new(ffmpeg);
+            command
                 .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
                 .arg(source)
                 .args([
@@ -305,13 +464,12 @@ pub fn run_one(
                     "-movflags",
                     "+faststart",
                 ])
-                .arg(temporary)
-                .output()?;
-            checked_command(result, "publishing encoding")?;
-            verify_decode(ffmpeg, temporary)?;
+                .arg(temporary);
+            run_command_cancellable(&mut command, "publishing encoding", control)?;
+            verify_decode(ffmpeg, temporary, control)?;
             let accepted = inspect(ffprobe, temporary)?;
             verify_stream_contract(&input, &accepted, mode)?;
-            let score = ssim_score(ffmpeg, source, temporary)?;
+            let score = ssim_score(ffmpeg, source, temporary, control)?;
             if score < 0.965 {
                 return Ok(RunOutcome::Rejected {
                     reason: format!(
@@ -324,6 +482,10 @@ pub fn run_one(
         Decision::Encode { .. } => bail!("unsupported encoding plan"),
         Decision::Skip { .. } => unreachable!(),
     };
+
+    if control.is_some_and(|c| c.is_cancelled()) {
+        bail!("batch cancelled by user before publication");
+    }
 
     if source_changed(source, &starting_metadata)? {
         bail!("source changed during processing; discarding temporary output");
