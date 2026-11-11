@@ -65,6 +65,89 @@ export function openNativeResults(): Promise<void> {
   return invoke<void>('open_output_directory')
 }
 
+export type HardwareEncoder = {
+  codec: string
+  encoder: string
+  api: 'video_toolbox' | 'nvenc' | 'qsv' | 'amf' | 'vaapi'
+  verified: boolean
+}
+
+export type HardwareReport = {
+  availableEncoders: HardwareEncoder[]
+  recommendedH264: string | null
+  recommendedHevc: string | null
+}
+
+export type MinistryProfile = {
+  id: string
+  nameAr: string
+  nameEn: string
+  descriptionAr: string
+  descriptionEn: string
+  mode: string
+  codec: string
+  container: string
+  crf: number | null
+  hardwareAccelerated: boolean
+  verification: string
+}
+
+export type BatchSavingsEstimate = {
+  originalBytes: number
+  estimatedBytes: number
+  savingsBytes: number
+  savingsPercent: number
+  filesCount: number
+}
+
+export type MediaFingerprint = {
+  hash: string
+  sizeBytes: number
+}
+
+export function detectHardwareEncoders(): Promise<HardwareReport> {
+  if (!isDesktop) {
+    return Promise.resolve({
+      availableEncoders: [],
+      recommendedH264: null,
+      recommendedHevc: null,
+    })
+  }
+  return invoke<HardwareReport>('detect_hardware_encoders')
+}
+
+export function getMinistryProfiles(): Promise<MinistryProfile[]> {
+  if (!isDesktop) {
+    return Promise.resolve([])
+  }
+  return invoke<MinistryProfile[]>('get_ministry_profiles')
+}
+
+export function estimateBatchSavings(
+  input: string,
+  mode: string,
+  codec: string,
+  crf?: number
+): Promise<BatchSavingsEstimate> {
+  if (!isDesktop) {
+    return Promise.resolve({
+      originalBytes: 0,
+      estimatedBytes: 0,
+      savingsBytes: 0,
+      savingsPercent: 0,
+      filesCount: 0,
+    })
+  }
+  return invoke<BatchSavingsEstimate>('estimate_batch_savings', { input, mode, codec, crf })
+}
+
+export function fingerprintMedia(path: string): Promise<MediaFingerprint> {
+  if (!isDesktop) {
+    return Promise.resolve({ hash: '', sizeBytes: 0 })
+  }
+  return invoke<MediaFingerprint>('fingerprint_media', { path })
+}
+
 export function nativeReportContent(format: 'csv' | 'html'): Promise<string> {
   return invoke<string>('report_content', { format })
 }

@@ -138,6 +138,8 @@ pub fn run_batch(
     if !control.wait_until_active() {
         return Ok(());
     }
+    // Prevent OS idle sleep during batch encoding
+    let _keep_awake = crate::keep_awake::KeepAwake::acquire();
     let cores = thread::available_parallelism().map(|value| value.get()).unwrap_or(1);
     let mut system = System::new();
     system.refresh_memory();

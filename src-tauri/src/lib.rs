@@ -291,6 +291,103 @@ fn open_output_directory(runtime: State<'_, Arc<Runtime>>) -> Result<(), String>
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchSavingsEstimate {
+    original_bytes: u64,
+    estimated_bytes: u64,
+    savings_bytes: i64,
+    savings_percent: i32,
+    files_count: usize,
+}
+
+#[tauri::command]
+fn detect_hardware_encoders() -> Result<mar2i_core::hardware::HardwareReport, String> {
+    let ffmpeg = media_binary("ffmpeg");
+    Ok(mar2i_core::hardware::detect_hardware(&ffmpeg))
+}
+
+#[tauri::command]
+fn get_ministry_profiles() -> Result<Vec<mar2i_core::profiles::MinistryProfile>, String> {
+    Ok(mar2i_core::profiles::standard_profiles())
+}
+
+#[tauri::command]
+fn fingerprint_media(path: String) -> Result<mar2i_core::fingerprint::MediaFingerprint, String> {
+    mar2i_core::fingerprint::compute_fingerprint(Path::new(&path))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn estimate_batch_savings(
+    input: String,
+    mode: String,
+    codec: String,
+    crf: Option<u8>,
+) -> Result<BatchSavingsEstimate, String> {
+    let mode_enum = parse_mode(&mode)?;
+    let input_path = PathBuf::from(input);
+    let discovered = discover(&input_path).map_err(|e| e.to_string())?;
+    let ffprobe = media_binary("ffprobe");
+    let ffmpeg = media_binary("ffmpeg");
+    let crf_val = crf.unwrap_or(22);
+
+    let mut total_original = 0u64;
+    let mut total_estimated = 0u64;
+    let mut files_counted = 0usize;
+
+    for file in &discovered {
+        total_original = total_original.saturating_add(file.size);
+        if let Ok(media) = inspect(&ffprobe, &file.absolute) {
+            match choose_plan(&media.profile, mode_enum) {
+                Decision::Skip { .. } => {
+                    total_estimated = total_estimated.saturating_add(file.size);
+                }
+                Decision::Copy { .. } => {
+                    total_estimated = total_estimated.saturating_add(file.size);
+                    files_counted += 1;
+                }
+                Decision::Encode { .. } => {
+                    let est = mar2i_core::estimate::estimate_video_size(
+                        &ffmpeg,
+                        &file.absolute,
+                        &media,
+                        &codec,
+                        crf_val,
+                        mode_enum,
+                    );
+                    match est {
+                        Ok(res) => {
+                            total_estimated = total_estimated.saturating_add(res.estimated_output_bytes);
+                            files_counted += 1;
+                        }
+                        Err(_) => {
+                            total_estimated = total_estimated.saturating_add(file.size);
+                        }
+                    }
+                }
+            }
+        } else {
+            total_estimated = total_estimated.saturating_add(file.size);
+        }
+    }
+
+    let savings_bytes = total_original as i64 - total_estimated as i64;
+    let savings_percent = if total_original > 0 {
+        ((savings_bytes as f64 / total_original as f64) * 100.0).round() as i32
+    } else {
+        0
+    };
+
+    Ok(BatchSavingsEstimate {
+        original_bytes: total_original,
+        estimated_bytes: total_estimated,
+        savings_bytes,
+        savings_percent,
+        files_count: files_counted,
+    })
+}
+
 #[tauri::command]
 fn report_content(format: String, runtime: State<'_, Arc<Runtime>>) -> Result<String, String> {
     let selected = runtime.selection.lock().unwrap().clone()
@@ -315,7 +412,11 @@ pub fn run() {
             batch_status,
             control_batch,
             open_output_directory,
-            report_content
+            report_content,
+            detect_hardware_encoders,
+            get_ministry_profiles,
+            fingerprint_media,
+            estimate_batch_savings
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
