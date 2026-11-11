@@ -8,6 +8,7 @@ import {
   nativeControl,
   openNativeResults,
   nativeReportContent,
+  batchProgressLabel,
   detectHardwareEncoders,
   type ScanResult,
   type BatchStatus,
@@ -389,7 +390,7 @@ function renderProgress(): string {
       ${isDesktop ? '<span class="feature-pill">حماية السكون: تُطلب أثناء تنفيذ الدفعة، ولا تتوفر حالتها الآنية في الواجهة</span><span class="feature-pill">الترميز الفعلي: CPU</span>' : `<span class="feature-pill active">حماية السكون: عرض تجريبي</span><span class="feature-pill">تسريع GPU: عرض تجريبي</span>`}
     </div>
 
-    <div class="section-title"><h2>حالة الملفات</h2><span>${isDesktop ? (batch?.running ? 'النتائج تتحدث مباشرة' : 'اكتملت العمليات') : 'معاينة تجريبية'}</span></div>
+    <div class="section-title"><h2>حالة الملفات</h2><span>${isDesktop ? batchProgressLabel(batch ?? null) : 'معاينة تجريبية'}</span></div>
     <div class="table-scroll"><table class="data-table progress-table"><thead><tr><th>اسم الفيديو</th><th>الحجم الأصلي</th><th>الحجم الجديد</th><th>الحالة</th><th>التقدم</th></tr></thead><tbody>${isDesktop ? nativeProgressRows() : progressRows()}</tbody></table></div>
     ${isDesktop && (batch?.jobs.length ?? 0) > 30 ? renderProgressPagination(batch!.jobs.length) : ''}
     <div class="review-note">${icon('help', 21)}<div><strong>معلومة عن الإيقاف والاستكمال</strong><p>الإيقاف المؤقت والإلغاء ينطبقان بين الملفات، وتستأنف الدفعة تلقائيًا من قاعدة البيانات المحلية دون إعادة تشغيل ما اكتمل.</p></div></div>
