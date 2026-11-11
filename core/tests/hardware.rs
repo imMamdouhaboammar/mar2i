@@ -15,6 +15,11 @@ fn candidate_encoders_are_platform_aware() {
     {
         assert!(candidates.iter().any(|c| c.encoder == "h264_nvenc"));
     }
+    #[cfg(target_os = "linux")]
+    {
+        assert!(candidates.iter().any(|c| c.encoder == "h264_nvenc"));
+        assert!(candidates.iter().any(|c| c.encoder == "h264_vaapi"));
+    }
 }
 
 #[test]
