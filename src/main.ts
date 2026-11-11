@@ -20,6 +20,7 @@ import {
   getSampleProbeData,
   ministryPresets,
   projectCodecSavings,
+  progressPageWindow,
   reportCsv,
   sampleFiles,
   savingsPercent,
@@ -58,6 +59,7 @@ type UiState = {
   reportMenu: boolean
   expandedFile: string | null
   progress: number
+  progressPage: number
   paused: boolean
   dialog: FolderDialog
   hardwareReport: HardwareReport | null
@@ -89,6 +91,7 @@ const state: UiState = {
   reportMenu: false,
   expandedFile: 'تسجيل_14.mov',
   progress: 34,
+  progressPage: 0,
   paused: true,
   dialog: null,
   hardwareReport: null,
@@ -341,13 +344,23 @@ function nativeProgressRows() {
     queued: 'بانتظار الدور',
     interrupted: 'بانتظار الاستكمال',
   }
-  return jobs.slice(0, 30).map((job) => {
+  const { start, end } = progressPageWindow(jobs.length, state.progressPage)
+  return jobs.slice(start, end).map((job) => {
     const done = ['completed', 'skipped', 'failed'].includes(job.status)
     return `<tr><td class="name-cell">${icon('video', 18)}<span>${escapeHtml(job.relative)}</span></td>
       <td class="latin">${formatBytes(job.inputBytes)}</td><td class="latin">${job.outputBytes === null ? 'غير متاح' : formatBytes(job.outputBytes)}</td>
       <td><span class="status ${job.status === 'completed' ? 'complete' : job.status === 'failed' ? 'verifying' : 'waiting'}">${labels[job.status] ?? job.status}</span></td>
       <td><div class="cell-progress"><div class="mini-track"><span style="width:${done ? 100 : 0}%"></span></div><b class="latin">${done ? '100%' : 'قيد العمل'}</b></div></td></tr>`
   }).join('') || '<tr><td colspan="5" class="no-results">جارٍ تجهيز قائمة الملفات</td></tr>'
+}
+
+function renderProgressPagination(totalJobs: number): string {
+  const { page, pages } = progressPageWindow(totalJobs, state.progressPage)
+  return `<nav class="progress-pagination" aria-label="صفحات ملفات الدفعة">
+    <button type="button" data-progress-prev ${page === 0 ? 'disabled' : ''}>السابق</button>
+    <span aria-live="polite">صفحة ${page + 1} من ${pages}</span>
+    <button type="button" data-progress-next ${page === pages - 1 ? 'disabled' : ''}>التالي</button>
+  </nav>`
 }
 
 function renderProgress(): string {
@@ -378,6 +391,7 @@ function renderProgress(): string {
 
     <div class="section-title"><h2>حالة الملفات</h2><span>${isDesktop ? (batch?.running ? 'النتائج تتحدث مباشرة' : 'اكتملت العمليات') : 'معاينة تجريبية'}</span></div>
     <div class="table-scroll"><table class="data-table progress-table"><thead><tr><th>اسم الفيديو</th><th>الحجم الأصلي</th><th>الحجم الجديد</th><th>الحالة</th><th>التقدم</th></tr></thead><tbody>${isDesktop ? nativeProgressRows() : progressRows()}</tbody></table></div>
+    ${isDesktop && (batch?.jobs.length ?? 0) > 30 ? renderProgressPagination(batch!.jobs.length) : ''}
     <div class="review-note">${icon('help', 21)}<div><strong>معلومة عن الإيقاف والاستكمال</strong><p>الإيقاف المؤقت والإلغاء ينطبقان بين الملفات، وتستأنف الدفعة تلقائيًا من قاعدة البيانات المحلية دون إعادة تشغيل ما اكتمل.</p></div></div>
   </div>`
 }
@@ -849,6 +863,7 @@ async function handleNativeAction(action: string): Promise<boolean> {
     try {
       await startNativeBatch(state.sourcePath, state.outputPath, state.mode, state.resource, state.codec)
       state.batch = null
+      state.progressPage = 0
       state.notice = null
       changeScreen('progress')
       if (nativeTimer !== null) clearInterval(nativeTimer)
@@ -957,6 +972,15 @@ root.addEventListener('click', async (event) => {
     } else {
       state.selectedFileIds.add(fileId)
     }
+    render()
+    return
+  }
+  const pageButton = target.closest<HTMLButtonElement>('[data-progress-prev], [data-progress-next]')
+  if (pageButton && isDesktop) {
+    const { page, pages } = progressPageWindow(state.batch?.jobs.length ?? 0, state.progressPage)
+    state.progressPage = pageButton.hasAttribute('data-progress-next')
+      ? Math.min(pages - 1, page + 1)
+      : Math.max(0, page - 1)
     render()
     return
   }

@@ -163,6 +163,11 @@ h2 { line-height: 1.4; }
 .section-title h2 { font-size: 23px; margin: 0; }
 .section-title > span { color: #8b9891; font-size: 12px; }
 .table-scroll { overflow-x: auto; width: 100%; border: 1px solid var(--border); border-radius: 10px; background: white; }
+.progress-pagination { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 14px; color: var(--text-muted, #52675d); font-size: 13px; }
+.progress-pagination button { border: 1px solid var(--border); border-radius: 8px; background: white; padding: 8px 16px; font: inherit; color: inherit; cursor: pointer; }
+.progress-pagination button:hover:not(:disabled) { background: #eaf0ec; }
+.progress-pagination button:focus-visible { outline: 2px solid #316e51; outline-offset: 2px; }
+.progress-pagination button:disabled { opacity: .45; cursor: not-allowed; }
 .data-table { width: 100%; border-collapse: collapse; text-align: right; white-space: nowrap; min-width: 710px; }
 .data-table th { padding: 15px 19px; background: #eaf0ec; color: #354940; font-size: 13px; font-weight: 730; }
 .data-table td { padding: 14px 19px; border-top: 1px solid #e5eae5; font-size: 13px; color: #32483d; }
