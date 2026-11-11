@@ -76,7 +76,7 @@ const state: UiState = {
   codec: 'auto',
   help: 'hevc',
   resource: 'balanced',
-  hardware: true,
+  hardware: !isDesktop,
   sourceName: isDesktop ? 'لم يتم اختيار مجلد' : 'فيديوهات موسم الحج 1447',
   outputName: isDesktop ? 'لم يتم اختيار مجلد' : 'النسخ المضغوطة',
   sourceCount: null,
@@ -192,7 +192,7 @@ function folderField(label: string, name: string, action: string, id: string): s
 function modeChoices(): string {
   return `<div class="mode-grid" role="group" aria-label="الغرض من الملفات">
     <button type="button" data-mode="publish" class="mode-choice${state.mode === 'publish' ? ' selected' : ''}" aria-pressed="${state.mode === 'publish'}">
-      <span class="radio-mark"></span><span><strong>النشر والمشاركة</strong><small>حجم أصغر وتوافق مع الأجهزة، مع تسريع GPU</small></span>
+      <span class="radio-mark"></span><span><strong>النشر والمشاركة</strong><small>حجم أصغر وتوافق مع الأجهزة${isDesktop ? ' باستخدام ترميز H.264 الحالي' : '، مع إمكانات GPU قيد التطوير'}</small></span>
     </button>
     <button type="button" data-mode="archive" class="mode-choice${state.mode === 'archive' ? ' selected' : ''}" aria-pressed="${state.mode === 'archive'}">
       <span class="radio-mark"></span><span><strong>الأرشفة عالية الجودة</strong><small>حفظ أمين غير منقوص FFV1 مع فحص framemd5</small></span>
@@ -213,24 +213,26 @@ function renderNew(): string {
       <p>${state.codec === 'auto' ? 'يختار التطبيق الأنسب لكل فيديو بحسب الهدف والجودة المطلوبة' : getCodec(state.codec).description}</p>
     </section>
     <button class="text-action" type="button" data-screen="options">عرض خيارات الضغط والتقديرات ${icon('arrow', 17)}</button>
-    <footer class="page-actions">${button('تحليل الفيديوهات وتوقع التوفير', 'analyze', 'primary')}${button('إلغاء', 'reset-new', 'outline')}</footer>
+    <footer class="page-actions">${button(isDesktop ? 'تحليل الفيديوهات' : 'تحليل الفيديوهات وتوقع التوفير', 'analyze', 'primary')}${button('إلغاء', 'reset-new', 'outline')}</footer>
   </div>`
 }
 
 function codecRow(codec: typeof codecs[number]): string {
   const active = state.codec === codec.id
   return `<div class="codec-row${active ? ' selected' : ''}" role="row">
-    <div class="codec-name" role="cell"><input type="radio" name="codec" value="${codec.id}" ${active ? 'checked' : ''} aria-label="اختيار ${codec.name}" /><strong dir="auto">${codec.name}</strong><button class="tiny-help${state.help === codec.id ? ' is-current' : ''}" data-help="${codec.id}" type="button" aria-label="شرح ${codec.name}">${icon('help', 18)}</button></div>
+    <div class="codec-name" role="cell"><input type="radio" name="codec" value="${codec.id}" ${active ? 'checked' : ''} ${isDesktop && codec.id !== 'auto' ? 'disabled' : ''} aria-label="اختيار ${codec.name}" /><strong dir="auto">${codec.name}</strong><button class="tiny-help${state.help === codec.id ? ' is-current' : ''}" data-help="${codec.id}" type="button" aria-label="شرح ${codec.name}">${icon('help', 18)}</button></div>
     <span role="cell">${codec.size}</span><span role="cell">${codec.speed}</span><span role="cell">${codec.compatibility}</span>
   </div>`
 }
 
 function toggle(): string {
   const hwDetected = state.hardwareReport?.availableEncoders.length ? true : false
-  const label = hwDetected
-    ? `تسريع بطاقة الرسوميات GPU متاح (${state.hardwareReport?.availableEncoders[0]?.encoder ?? 'مفعل'})`
-    : 'استخدام تسريع الجهاز عند توفره'
-  return `<label class="toggle-field"><input type="checkbox" id="hardware" ${state.hardware ? 'checked' : ''} /><span class="switch" aria-hidden="true"></span><span>${label}</span><span class="inline-help" title="يسرع النشر والمشاركة بنسبة 5x-8x، ويُعطل تلقائيًا في مسار الأرشفة لضمان التطابق الرياضي">${icon('help', 17)}</span></label>`
+  const label = isDesktop
+    ? 'تسريع GPU غير متصل بالمعالجة الفعلية بعد، ويستخدم التطبيق حاليًا CPU'
+    : hwDetected
+      ? `تسريع بطاقة الرسوميات GPU متاح (${state.hardwareReport?.availableEncoders[0]?.encoder ?? 'مفعل'})`
+      : 'استخدام تسريع الجهاز عند توفره'
+  return `<label class="toggle-field"><input type="checkbox" id="hardware" ${state.hardware ? 'checked' : ''} ${isDesktop ? 'disabled' : ''} /><span class="switch" aria-hidden="true"></span><span>${label}</span></label>`
 }
 
 function renderOptions(): string {
@@ -241,11 +243,11 @@ function renderOptions(): string {
     <div class="segmented" role="group" aria-label="غرض المعالجة"><button class="${state.mode === 'publish' ? 'active' : ''}" data-mode="publish" aria-pressed="${state.mode === 'publish'}">النشر والمشاركة</button><button class="${state.mode === 'archive' ? 'active' : ''}" data-mode="archive" aria-pressed="${state.mode === 'archive'}">الأرشفة عالية الجودة</button></div>
     
     <!-- Live Predictive Storage Savings Meter Mount -->
-    <div id="storage-meter-mount"></div>
+    ${isDesktop ? '<p class="inline-warning">مقارنة الترميزات للشرح فقط. الترميز اليدوي والتقدير الفعلي للحجم غير متاحين بعد</p>' : '<div id="storage-meter-mount"></div>'}
 
     <!-- Official Ministry Presets -->
-    <div class="preset-section">
-      <h3>إعدادات وزارة الحج والعمرة المعتمدة</h3>
+    ${isDesktop ? '' : `<div class="preset-section">
+      <h3>نماذج مقترحة لاحتياجات وزارة الحج والعمرة (غير معتمدة رسميًا)</h3>
       <div class="preset-grid">
         ${ministryPresets.map((preset) => `
           <button type="button" class="preset-card ${state.codec === preset.codec && state.mode === preset.mode ? 'active' : ''}" data-preset-id="${preset.id}">
@@ -255,7 +257,7 @@ function renderOptions(): string {
           </button>
         `).join('')}
       </div>
-    </div>
+    </div>`}
 
     <div class="options-layout"><section class="codec-table" aria-label="مقارنة الترميزات" role="table">
       <div class="codec-row codec-header" role="row"><strong role="columnheader">الترميز</strong><strong role="columnheader">حجم الملف</strong><strong role="columnheader">سرعة المعالجة</strong><strong role="columnheader">التوافق</strong></div>
@@ -273,8 +275,8 @@ const sampleCompressedFrame = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3
 
 function renderReview(): string {
   const scan = state.analysis
-  const total = scan?.total ?? (state.sourceCount ?? 1248)
-  const totalBytesFormatted = scan?.totalBytes ? formatBytes(scan.totalBytes) : '182.4 GB'
+  const total = isDesktop ? (scan?.total ?? 0) : (scan?.total ?? state.sourceCount ?? 1248)
+  const totalBytesFormatted = isDesktop ? formatBytes(scan?.totalBytes ?? 0) : (scan?.totalBytes ? formatBytes(scan.totalBytes) : '182.4 GB')
 
   return `<div class="page page-review">${screenHeading('مراجعة الدفعة والتحقق البصري', 'تحقق من جودة المشاهد وقائمة الملفات قبل تأكيد المعالجة', true)}
     <section class="review-summary"><h2>الملفات المحددة للدفعة</h2>
@@ -287,10 +289,10 @@ function renderReview(): string {
     </section>
 
     <!-- Predictive Storage Meter -->
-    <div id="storage-meter-mount"></div>
+    ${isDesktop ? '<p class="inline-warning">تقدير الحجم غير متاح في هذه الشاشة حتى يكتمل ربط القياسات الحقيقية</p>' : '<div id="storage-meter-mount"></div>'}
 
     <!-- Advanced Video Engineering & Pre-Processing Tools -->
-    <div class="video-tools-ribbon" role="toolbar" aria-label="أدوات معالجة الفيديو المتقدمة">
+    ${isDesktop ? '<p class="inline-warning">التشذيب وتغيير الأبعاد والفحص المتقدم قيد التطوير، ولن تؤثر أي خيارات تجريبية على الملفات</p>' : `<div class="video-tools-ribbon" role="toolbar" aria-label="أدوات معالجة الفيديو المتقدمة">
       <span class="ribbon-title">${icon('video', 16)} <strong>أدوات الفحص والتحضير البصري:</strong></span>
       <div class="ribbon-buttons">
         <button type="button" class="btn btn-outline" data-action="open-trimmer">
@@ -303,19 +305,19 @@ function renderReview(): string {
           ${icon('report', 17)} <span>فحص التفاصيل والبصمة الرقمية (SHA-256)</span>
         </button>
       </div>
-    </div>
+    </div>`}
 
     <!-- Visual A/B Compare Tool Mount Point -->
-    <div class="section-title">
+    ${!isDesktop ? `<div class="section-title">
       <h2>فحص الجودة البصرية التفاعلي (A/B)</h2>
       <span>قارن دقة المشاهد قبل وبعد المعالجة مع إمكانية استخدام عدسة التكبير وخريطة التباين</span>
     </div>
-    <div id="review-compare-mount" class="compare-container"></div>
+    <div id="review-compare-mount" class="compare-container"></div>` : '<p class="inline-warning">المقارنة البصرية تتطلب صورًا حقيقية للمصدر والناتج، وستتاح بعد ربط استخراج الإطارات</p>'}
 
     <div class="review-note">${icon('shield', 21)}<div><strong>ضمانة سلامة الأصول الأصلية</strong>
       <p>الأصول الأصلية محمية بصريًا ورياضيًا وتبقى للقراءة فقط. لن يتم تغيير أي ملف مصدري مطلقًا أثناء المعالجة.</p>
     </div></div>
-    <footer class="page-actions">${button('بدء المعالجة الآن', 'start-preview', 'primary')}${button('تعديل الخيارات', 'go-options', 'outline')}</footer>
+    <footer class="page-actions">${button('بدء المعالجة الآن', 'start-preview', 'primary', isDesktop && !scan?.supported ? 'disabled' : '')}${button('تعديل الخيارات', 'go-options', 'outline')}</footer>
   </div>`
 }
 
@@ -371,12 +373,7 @@ function renderProgress(): string {
 
     <!-- Runtime Guards: OS Sleep Prevention & Hardware Acceleration -->
     <div class="feature-indicators">
-      <span class="feature-pill active" title="حماية النظام من الدخول في وضع السكون حتى انتهاء الدفعة">
-        <span class="status-dot"></span> حماية السكون (KeepAwake): نشط
-      </span>
-      <span class="feature-pill active" title="تسريع معالجة الفيديو بالبطاقة الرسومية">
-        <span class="status-dot"></span> تسريع العتاد: ${state.hardware ? 'GPU نشط' : 'معالجة CPU'}
-      </span>
+      ${isDesktop ? '<span class="feature-pill">حماية السكون: تُطلب أثناء تنفيذ الدفعة، ولا تتوفر حالتها الآنية في الواجهة</span><span class="feature-pill">الترميز الفعلي: CPU</span>' : `<span class="feature-pill active">حماية السكون: عرض تجريبي</span><span class="feature-pill">تسريع GPU: عرض تجريبي</span>`}
     </div>
 
     <div class="section-title"><h2>حالة الملفات</h2><span>${isDesktop ? (batch?.running ? 'النتائج تتحدث مباشرة' : 'اكتملت العمليات') : 'معاينة تجريبية'}</span></div>
@@ -392,7 +389,7 @@ function status(row: typeof sampleFiles[number]): string {
 }
 
 function resultRows(): string {
-  if (isDesktop && state.batch) return nativeResultRows()
+  if (isDesktop) return state.batch ? nativeResultRows() : '<tr><td colspan="6" class="no-results">لا توجد نتائج لدفعة بعد</td></tr>'
   const query = state.search.trim().toLocaleLowerCase('ar')
   const filtered = sampleFiles.filter((file) => file.name.toLocaleLowerCase('ar').includes(query))
   if (!filtered.length) return `<tr><td colspan="6" class="no-results">لا توجد ملفات تطابق البحث</td></tr>`
@@ -432,7 +429,7 @@ function nativeResultRows() {
     const isSelected = state.selectedFileIds.has(job.relative)
     return `<tr class="${isSelected ? 'row-selected' : ''}">
       <td style="width: 40px; text-align: center;">
-        <input type="checkbox" class="file-cb" data-file-select="${name}" ${isSelected ? 'checked' : ''} aria-label="تحديد ${name}" />
+        <input type="checkbox" class="file-cb" data-file-select="${name}" disabled title="الإجراءات المجمعة قيد التطوير" ${isSelected ? 'checked' : ''} aria-label="تحديد ${name}" />
       </td>
       <td class="name-cell"><button class="row-toggle" data-expand="${name}" aria-expanded="${state.expandedFile === job.relative}">${icon('video', 17)}<span>${name}</span>${icon('chevron', 16)}</button></td>
       <td class="latin">${formatBytes(job.inputBytes)}</td><td class="latin">${job.outputBytes === null ? 'غير متاح' : formatBytes(job.outputBytes)}</td>
@@ -440,10 +437,10 @@ function nativeResultRows() {
       <td>
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
           <span class="row-status ${job.status === 'completed' ? 'successful' : job.status === 'failed' ? 'needs-review' : 'neutral'}">${label}</span>
-          <button class="row-probe-btn" type="button" data-probe-file="${name}" title="فحص البصمة الرقمية">${icon('report', 15)}</button>
+          ${isDesktop ? '' : `<button class="row-probe-btn" type="button" data-probe-file="${name}" title="فحص البصمة الرقمية">${icon('report', 15)}</button>`}
         </div>
       </td></tr>
-      ${state.expandedFile === job.relative ? `<tr class="detail-row"><td colspan="6"><div class="detail-note">${icon('help', 18)}<div><strong>تفاصيل نتيجة الملف</strong><span>${escapeHtml(job.reason ?? job.quality ?? 'لم تتوفر تفاصيل إضافية')} <button class="btn btn-outline" style="padding: 2px 8px; font-size: 11px; margin-inline-start: 12px;" type="button" data-probe-file="${name}">عرض التحليل الجنائي الكامل</button></span></div></div></td></tr>` : ''}`
+      ${state.expandedFile === job.relative ? `<tr class="detail-row"><td colspan="6"><div class="detail-note">${icon('help', 18)}<div><strong>تفاصيل نتيجة الملف</strong><span>${escapeHtml(job.reason ?? job.quality ?? 'لم تتوفر تفاصيل إضافية')}</span></div></div></td></tr>` : ''}`
   }).join('')
 }
 
@@ -454,13 +451,13 @@ function renderResults(): string {
   const failed = isDesktop ? (statusObj?.failed ?? 0) : 8
   const savingsText = isDesktop ? formatBytes(statusObj?.verifiedSavingsBytes ?? 0) : '318.6 GB'
 
-  return `<div class="page page-results">${screenHeading('اكتملت معالجة الدفعة', 'المساحة الموفرة محسوبة من الملفات المقبولة فقط، والأصول لم تتغير')}
+  return `<div class="page page-results">${screenHeading(isDesktop && !statusObj ? 'نتائج المعالجة' : 'اكتملت معالجة الدفعة', isDesktop && !statusObj ? 'ابدأ دفعة أولًا لعرض نتائج حقيقية' : 'المساحة الموفرة محسوبة من الملفات المقبولة فقط، والأصول لم تتغير')}
     <!-- Official Ministry Impact Certificate Mount Point -->
-    <div id="results-certificate-mount"></div>
+    ${isDesktop ? '<p class="inline-warning">تقرير المعالجة أدناه مبني على نتائج الدفعة الفعلية. إصدار شهادات الاعتماد الرقمي لم يكتمل بعد</p>' : '<div id="results-certificate-mount"></div>'}
 
     <div class="results-overview"><div class="result-highlight"><strong class="latin">${savingsText}</strong><span>مساحة تم توفيرها بعد التحقق</span></div><dl class="results-counts"><div><dd class="latin">${completed}</dd><dt>مكتمل</dt></div><div><dd class="latin">${skipped}</dd><dt>دون ضغط</dt></div><div><dd class="latin">${failed}</dd><dt>فشل / يحتاج مراجعة</dt></div></dl><div class="result-actions">${button(`${icon('folder', 18)} فتح مجلد النتائج`, 'open-results-folder', 'primary', isDesktop && !statusObj ? 'disabled' : '')}<div class="menu-wrap">${button(`تصدير التقرير ${icon('chevron', 16)}`, 'toggle-report-menu', 'outline', `aria-expanded="${state.reportMenu}"`)}${state.reportMenu ? `<div class="export-menu" role="menu"><button role="menuitem" data-export="csv">CSV</button><button role="menuitem" data-export="excel">Excel (CSV)</button><button role="menuitem" data-export="html">HTML</button><button role="menuitem" data-export="pdf">PDF (طباعة)</button></div>` : ''}</div></div></div>
     <div class="section-title results-title"><h2>نتائج الملفات</h2><div class="search-box">${icon('search', 19)}<input id="file-search" type="search" placeholder="البحث في الملفات" value="${escapeHtml(state.search)}" aria-label="البحث في الملفات" /><button type="button" data-action="clear-search" aria-label="مسح البحث" ${state.search ? '' : 'hidden'}>${icon('close', 15)}</button></div></div>
-    <div class="table-scroll"><table class="data-table results-table"><thead><tr><th style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cb" aria-label="تحديد جميع الملفات" ${state.selectedFileIds.size > 0 && state.selectedFileIds.size === sampleFiles.length ? 'checked' : ''} /></th><th>الملف</th><th>قبل</th><th>بعد</th><th>التوفير</th><th>الحالة</th></tr></thead><tbody id="result-table-body">${resultRows()}</tbody></table></div>
+    <div class="table-scroll"><table class="data-table results-table"><thead><tr><th style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cb" aria-label="تحديد جميع الملفات" ${isDesktop ? 'disabled title="تحديد الملفات قيد التطوير"' : (state.selectedFileIds.size > 0 && state.selectedFileIds.size === sampleFiles.length ? 'checked' : '')} /></th><th>الملف</th><th>قبل</th><th>بعد</th><th>التوفير</th><th>الحالة</th></tr></thead><tbody id="result-table-body">${resultRows()}</tbody></table></div>
     <p class="data-disclaimer">${isDesktop ? 'التقرير يعرض القيم المقاسة من عملية المعالجة الفعلية' : 'القيم المعروضة نموذجية لتجربة الواجهة'}</p>
   </div>`
 }
@@ -473,7 +470,7 @@ function renderSettings(): string {
   ]
   return `<div class="page page-settings">${screenHeading('الإعدادات', 'اضبط طريقة استخدام موارد جهازك وسلوك المعالجة')}
     <section class="settings-section"><h2>استهلاك موارد الجهاز</h2><div class="resource-options">${options.map((option) => `<label class="resource-option ${state.resource === option.id ? 'selected' : ''}"><input type="radio" name="resource" value="${option.id}" ${state.resource === option.id ? 'checked' : ''} /><span><strong>${option.name}</strong><small>${option.description}</small></span></label>`).join('')}</div></section>
-    <section class="settings-section"><h2>تسريع الترميز</h2>${toggle()}<p class="setting-description">يستفيد من إمكانيات البطاقة الرسومية GPU عند توفرها، ويُعطل تلقائيًا في الأرشفة لضمان التطابق التام</p></section>
+    <section class="settings-section"><h2>تسريع الترميز</h2>${toggle()}<p class="setting-description">${isDesktop ? 'النسخة الحالية تستخدم ترميز CPU. فحص توافق GPU لا يعني تشغيله أثناء الضغط' : 'اختيار GPU هنا توضيحي، وتفعيله للضغط الحقيقي قيد التطوير'}</p></section>
     <footer class="page-actions">${button('حفظ الإعدادات', 'save-settings', 'primary')}</footer>
   </div>`
 }
@@ -541,7 +538,7 @@ function render(): void {
 
   // 1. Mount or update Dynamic Island
   const islandSlot = document.querySelector<HTMLElement>('#dynamic-island-slot')
-  if (islandSlot) {
+  if (islandSlot && !isDesktop) {
     const queueItems: QueueItem[] = [
       { id: '1', name: 'إرشادات الطواف.mp4', originalSize: 164 * 1024 * 1024, compressedSize: 72 * 1024 * 1024, codec: 'HEVC', status: state.progress > 50 ? 'completed' : 'compressing', progress: state.progress },
       { id: '2', name: 'خدمات الحجاج.mov', originalSize: 742 * 1024 * 1024, compressedSize: 318 * 1024 * 1024, codec: 'HEVC', status: 'completed', progress: 100 },
@@ -579,7 +576,7 @@ function render(): void {
   }
 
   // 2. Mount CompareSlider if on review screen
-  if (state.screen === 'review') {
+  if (state.screen === 'review' && !isDesktop) {
     const mount = document.querySelector<HTMLElement>('#review-compare-mount')
     if (mount) {
       state.compareSliderInstance = new CompareSlider({
@@ -596,7 +593,7 @@ function render(): void {
 
   // 3. Mount StorageMeter if on review or options screen
   const storageMount = document.querySelector<HTMLElement>('#storage-meter-mount')
-  if (storageMount) {
+  if (storageMount && !isDesktop) {
     const approxInputGb = state.analysis?.totalBytes ? state.analysis.totalBytes / (1024 * 1024 * 1024) : 148.5
     const forecast = projectCodecSavings(approxInputGb, state.codec, state.mode)
     new StorageMeter({
@@ -611,7 +608,7 @@ function render(): void {
   }
 
   // 4. Mount ImpactCertificate if on results screen
-  if (state.screen === 'results') {
+  if (state.screen === 'results' && !isDesktop) {
     const certMount = document.querySelector<HTMLElement>('#results-certificate-mount')
     if (certMount) {
       new ImpactCertificate({
@@ -642,7 +639,7 @@ function render(): void {
 
   // 5. Mount BatchActionBar if files selected
   const batchBarMount = document.querySelector<HTMLElement>('#batch-action-bar-mount')
-  if (batchBarMount && state.selectedFileIds.size > 0) {
+  if (batchBarMount && !isDesktop && state.selectedFileIds.size > 0) {
     new BatchActionBar({
       container: batchBarMount,
       selectedCount: state.selectedFileIds.size,
@@ -670,7 +667,7 @@ function render(): void {
 
   // 6. Mount Modals (VideoTrimmer, AspectRatioStudio, ForensicProbeDrawer)
   const modalMount = document.querySelector<HTMLElement>('#modal-mount')
-  if (modalMount) {
+  if (modalMount && !isDesktop) {
     if (state.activeTrimmerFile) {
       new VideoTrimmer({
         container: modalMount,
@@ -760,8 +757,9 @@ async function exportReport(format: string): Promise<void> {
       download(`mar2i-report.${format === 'html' ? 'html' : 'csv'}`, content, format === 'html' ? 'text/html' : 'text/csv;charset=utf-8;')
       render()
       return
-    } catch {
-      // Fallback to sample export
+    } catch (error) {
+      showError(error)
+      return
     }
   }
 
