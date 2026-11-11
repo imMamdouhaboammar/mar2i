@@ -6,8 +6,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 static IS_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-const REASON_STR: &str = "mar2i: Processing Hajj & Umrah video batch\0";
-
 /// RAII guard that inhibits OS idle sleep.
 /// When dropped, normal system sleep behavior is restored.
 pub struct KeepAwake {
@@ -75,8 +73,9 @@ impl Drop for KeepAwake {
 
 #[cfg(target_os = "macos")]
 mod macos {
-    use super::REASON_STR;
     use std::ffi::c_void;
+
+    const REASON_STR: &str = "mar2i: Processing Hajj & Umrah video batch\0";
     use std::ptr;
 
     type CFStringRef = *const c_void;
