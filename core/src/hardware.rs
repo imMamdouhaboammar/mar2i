@@ -214,3 +214,21 @@ pub fn detect_hardware(ffmpeg: &Path) -> HardwareReport {
         recommended_hevc,
     }
 }
+
+/// Probes which CPU and hardware encoders are verified and available in the host ffmpeg.
+pub fn probe_available_encoders(ffmpeg: &Path) -> Vec<String> {
+    let standard = ["libx264", "libx265", "libsvtav1", "libvpx-vp9", "ffv1"];
+    let mut available = Vec::new();
+    for enc in standard {
+        if probe_encoder(ffmpeg, enc) {
+            available.push(enc.to_string());
+        }
+    }
+    let hw = detect_hardware(ffmpeg);
+    for h in hw.available_encoders {
+        if !available.contains(&h.encoder) {
+            available.push(h.encoder);
+        }
+    }
+    available
+}

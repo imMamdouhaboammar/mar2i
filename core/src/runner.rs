@@ -1,5 +1,7 @@
 use crate::media::{InspectedMedia, inspect};
-use crate::policy::{Decision, Mode, choose_plan};
+use crate::policy::{
+    CodecPreference, Decision, Mode, choose_plan_with_preference, validate_container_compatibility,
+};
 use crate::worker::Control;
 use anyhow::{Context, Result, bail};
 use sha2::{Digest, Sha256};
@@ -341,6 +343,23 @@ fn verify_stream_contract(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RunOptions<'a> {
+    pub mode: Mode,
+    pub preference: CodecPreference,
+    pub available_encoders: Option<&'a [String]>,
+}
+
+impl From<Mode> for RunOptions<'_> {
+    fn from(mode: Mode) -> Self {
+        Self {
+            mode,
+            preference: CodecPreference::Auto,
+            available_encoders: None,
+        }
+    }
+}
+
 pub fn run_one(
     ffmpeg: &Path,
     ffprobe: &Path,
@@ -361,13 +380,38 @@ pub fn run_one_with_control(
     mode: Mode,
     control: Option<&Control>,
 ) -> Result<RunOutcome> {
+    run_one_with_options(
+        ffmpeg,
+        ffprobe,
+        source,
+        relative,
+        output_root,
+        RunOptions::from(mode),
+        control,
+    )
+}
+
+pub fn run_one_with_options(
+    ffmpeg: &Path,
+    ffprobe: &Path,
+    source: &Path,
+    relative: &Path,
+    output_root: &Path,
+    options: RunOptions<'_>,
+    control: Option<&Control>,
+) -> Result<RunOutcome> {
     if control.is_some_and(|c| c.is_cancelled()) {
         bail!("batch cancelled before processing");
     }
     validated_relative(relative)?;
     let input = inspect(ffprobe, source)?;
     let starting_metadata = fs::symlink_metadata(source)?;
-    let decision = choose_plan(&input.profile, mode);
+    let decision = choose_plan_with_preference(
+        &input.profile,
+        options.mode,
+        options.preference,
+        options.available_encoders,
+    );
 
     let (extension, copy) = match &decision {
         Decision::Skip { reason } => {
@@ -378,6 +422,13 @@ pub fn run_one_with_control(
         Decision::Copy { .. } => ("", true),
         Decision::Encode { container, .. } => (*container, false),
     };
+    if let Decision::Encode {
+        codec, container, ..
+    } = &decision
+    {
+        validate_container_compatibility(codec, container)
+            .map_err(|e| anyhow::anyhow!("container compatibility error: {e}"))?;
+    }
     let destination_relative = make_output_name(relative, extension, copy)?;
     let root = fs::canonicalize(output_root).context("output directory must exist")?;
     if !root.is_dir() {
@@ -396,10 +447,12 @@ pub fn run_one_with_control(
 
     let suffix = if copy {
         ".copy"
-    } else if extension == "mkv" {
-        ".mkv"
     } else {
-        ".mp4"
+        match extension {
+            "mkv" => ".mkv",
+            "webm" => ".webm",
+            _ => ".mp4",
+        }
     };
     let tempfile = Builder::new()
         .prefix(".mar2i-partial-")
@@ -453,7 +506,7 @@ pub fn run_one_with_control(
             run_command_cancellable(&mut command, "lossless archival encoding", control)?;
             verify_decode(ffmpeg, temporary, control)?;
             let accepted = inspect(ffprobe, temporary)?;
-            verify_stream_contract(&input, &accepted, mode)?;
+            verify_stream_contract(&input, &accepted, options.mode)?;
             if frame_hashes(ffmpeg, source, control)? != frame_hashes(ffmpeg, temporary, control)? {
                 bail!("decoded archival frames are not identical");
             }
@@ -500,7 +553,169 @@ pub fn run_one_with_control(
             run_command_cancellable(&mut command, "publishing encoding", control)?;
             verify_decode(ffmpeg, temporary, control)?;
             let accepted = inspect(ffprobe, temporary)?;
-            verify_stream_contract(&input, &accepted, mode)?;
+            verify_stream_contract(&input, &accepted, options.mode)?;
+            let score = ssim_score(ffmpeg, source, temporary, control)?;
+            if score < 0.965 {
+                return Ok(RunOutcome::Rejected {
+                    reason: format!(
+                        "SSIM {score:.5} below provisional 0.965 gate; manual quality review needed"
+                    ),
+                });
+            }
+            format!("SSIM={score:.5} (automated gate, not proof of visual equivalence)")
+        }
+        Decision::Encode {
+            codec: "libx265",
+            crf,
+            container,
+        } => {
+            let mut command = Command::new(ffmpeg);
+            command
+                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
+                .arg(source)
+                .args([
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a?",
+                    "-map_metadata",
+                    "0",
+                    "-map_chapters",
+                    "0",
+                    "-c:v",
+                    "libx265",
+                    "-preset",
+                    "medium",
+                    "-crf",
+                ])
+                .arg(crf.to_string())
+                .args([
+                    "-tag:v",
+                    "hvc1",
+                    "-fps_mode",
+                    "passthrough",
+                    "-threads",
+                    "2",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "copy",
+                ]);
+            if container == "mp4" {
+                command.args(["-movflags", "+faststart"]);
+            }
+            command.arg(temporary);
+            run_command_cancellable(&mut command, "HEVC encoding", control)?;
+            verify_decode(ffmpeg, temporary, control)?;
+            let accepted = inspect(ffprobe, temporary)?;
+            verify_stream_contract(&input, &accepted, options.mode)?;
+            let score = ssim_score(ffmpeg, source, temporary, control)?;
+            if score < 0.965 {
+                return Ok(RunOutcome::Rejected {
+                    reason: format!(
+                        "SSIM {score:.5} below provisional 0.965 gate; manual quality review needed"
+                    ),
+                });
+            }
+            format!("SSIM={score:.5} (automated gate, not proof of visual equivalence)")
+        }
+        Decision::Encode {
+            codec: "libsvtav1",
+            crf,
+            container,
+        } => {
+            let mut command = Command::new(ffmpeg);
+            command
+                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
+                .arg(source)
+                .args([
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a?",
+                    "-map_metadata",
+                    "0",
+                    "-map_chapters",
+                    "0",
+                    "-c:v",
+                    "libsvtav1",
+                    "-preset",
+                    "7",
+                    "-crf",
+                ])
+                .arg(crf.to_string())
+                .args([
+                    "-fps_mode",
+                    "passthrough",
+                    "-threads",
+                    "2",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "copy",
+                ]);
+            if container == "mp4" {
+                command.args(["-movflags", "+faststart"]);
+            }
+            command.arg(temporary);
+            run_command_cancellable(&mut command, "AV1 encoding", control)?;
+            verify_decode(ffmpeg, temporary, control)?;
+            let accepted = inspect(ffprobe, temporary)?;
+            verify_stream_contract(&input, &accepted, options.mode)?;
+            let score = ssim_score(ffmpeg, source, temporary, control)?;
+            if score < 0.965 {
+                return Ok(RunOutcome::Rejected {
+                    reason: format!(
+                        "SSIM {score:.5} below provisional 0.965 gate; manual quality review needed"
+                    ),
+                });
+            }
+            format!("SSIM={score:.5} (automated gate, not proof of visual equivalence)")
+        }
+        Decision::Encode {
+            codec: "libvpx-vp9",
+            crf,
+            ..
+        } => {
+            let mut command = Command::new(ffmpeg);
+            command
+                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
+                .arg(source)
+                .args([
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a?",
+                    "-map_metadata",
+                    "0",
+                    "-map_chapters",
+                    "0",
+                    "-c:v",
+                    "libvpx-vp9",
+                    "-b:v",
+                    "0",
+                    "-crf",
+                ])
+                .arg(crf.to_string())
+                .args([
+                    "-deadline",
+                    "good",
+                    "-cpu-used",
+                    "2",
+                    "-fps_mode",
+                    "passthrough",
+                    "-threads",
+                    "2",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "copy",
+                ])
+                .arg(temporary);
+            run_command_cancellable(&mut command, "VP9 encoding", control)?;
+            verify_decode(ffmpeg, temporary, control)?;
+            let accepted = inspect(ffprobe, temporary)?;
+            verify_stream_contract(&input, &accepted, options.mode)?;
             let score = ssim_score(ffmpeg, source, temporary, control)?;
             if score < 0.965 {
                 return Ok(RunOutcome::Rejected {

@@ -1,6 +1,6 @@
-use crate::policy::Mode;
+use crate::policy::{CodecPreference, Mode};
 use crate::queue::{BatchQueue, Job, JobCompletion};
-use crate::runner::{RunOutcome, run_one_with_control};
+use crate::runner::{RunOptions, RunOutcome, run_one_with_options};
 use anyhow::{Context, Result, bail};
 use std::fs;
 use std::path::Path;
@@ -15,6 +15,23 @@ pub enum ResourceProfile {
     Low,
     Balanced,
     Maximum,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct BatchOptions {
+    pub mode: Mode,
+    pub profile: ResourceProfile,
+    pub preference: CodecPreference,
+}
+
+impl BatchOptions {
+    pub fn new(mode: Mode, profile: ResourceProfile) -> Self {
+        Self {
+            mode,
+            profile,
+            preference: CodecPreference::Auto,
+        }
+    }
 }
 
 pub struct ProcessGuard<'a> {
@@ -158,24 +175,24 @@ fn check_job_source(job: &Job) -> Result<()> {
     Ok(())
 }
 
-fn process_next(
+pub fn process_next(
     queue: &BatchQueue,
     ffmpeg: &Path,
     ffprobe: &Path,
     output: &Path,
-    mode: Mode,
+    options: RunOptions<'_>,
     job: Job,
     control: &Control,
 ) -> Result<()> {
     let start = Instant::now();
     let result = check_job_source(&job).and_then(|_| {
-        run_one_with_control(
+        run_one_with_options(
             ffmpeg,
             ffprobe,
             Path::new(&job.source),
             Path::new(&job.relative),
             output,
-            mode,
+            options,
             Some(control),
         )
     });
@@ -262,6 +279,24 @@ pub fn run_batch(
     profile: ResourceProfile,
     control: &Control,
 ) -> Result<()> {
+    run_batch_with_options(
+        queue,
+        ffmpeg,
+        ffprobe,
+        output,
+        BatchOptions::new(mode, profile),
+        control,
+    )
+}
+
+pub fn run_batch_with_options(
+    queue: &BatchQueue,
+    ffmpeg: &Path,
+    ffprobe: &Path,
+    output: &Path,
+    options: BatchOptions,
+    control: &Control,
+) -> Result<()> {
     if !control.wait_until_active() {
         return Ok(());
     }
@@ -272,11 +307,18 @@ pub fn run_batch(
         .unwrap_or(1);
     let mut system = System::new();
     system.refresh_memory();
-    let worker_count = worker_limit(profile, cores, system.available_memory());
+    let worker_count = worker_limit(options.profile, cores, system.available_memory());
+    let available_encoders = crate::hardware::probe_available_encoders(ffmpeg);
     thread::scope(|scope| -> Result<()> {
         let handles = (0..worker_count)
             .map(|_| {
-                scope.spawn(|| -> Result<()> {
+                let encoders_ref = &available_encoders;
+                scope.spawn(move || -> Result<()> {
+                    let run_opts = RunOptions {
+                        mode: options.mode,
+                        preference: options.preference,
+                        available_encoders: Some(encoders_ref),
+                    };
                     loop {
                         if !control.wait_until_active() {
                             break;
@@ -284,7 +326,7 @@ pub fn run_batch(
                         let Some(job) = queue.claim_next()? else {
                             break;
                         };
-                        process_next(queue, ffmpeg, ffprobe, output, mode, job, control)?;
+                        process_next(queue, ffmpeg, ffprobe, output, run_opts, job, control)?;
                     }
                     Ok(())
                 })

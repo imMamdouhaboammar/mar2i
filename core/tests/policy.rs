@@ -1,4 +1,7 @@
-use mar2i_core::policy::{Decision, MediaClass, MediaProfile, Mode, choose_plan};
+use mar2i_core::policy::{
+    CodecPreference, Decision, MediaClass, MediaProfile, Mode, choose_plan,
+    choose_plan_with_preference, validate_container_compatibility,
+};
 
 fn example(codec: &str) -> MediaProfile {
     MediaProfile {
@@ -106,4 +109,94 @@ fn incompatible_audio_is_reported_instead_of_dropped() {
         choose_plan(&p, Mode::Publishing),
         Decision::Skip { .. }
     ));
+}
+
+#[test]
+fn manual_codec_preferences_generate_correct_plans() {
+    let p = example("prores");
+
+    // HEVC
+    let hevc_plan = choose_plan_with_preference(&p, Mode::Publishing, CodecPreference::Hevc, None);
+    assert_eq!(
+        hevc_plan,
+        Decision::Encode {
+            codec: "libx265",
+            container: "mp4",
+            crf: 22,
+        }
+    );
+
+    // AV1
+    let av1_plan = choose_plan_with_preference(&p, Mode::Publishing, CodecPreference::Av1, None);
+    assert_eq!(
+        av1_plan,
+        Decision::Encode {
+            codec: "libsvtav1",
+            container: "mp4",
+            crf: 28,
+        }
+    );
+
+    // VP9
+    let vp9_plan = choose_plan_with_preference(&p, Mode::Publishing, CodecPreference::Vp9, None);
+    assert_eq!(
+        vp9_plan,
+        Decision::Encode {
+            codec: "libvpx-vp9",
+            container: "webm",
+            crf: 24,
+        }
+    );
+}
+
+#[test]
+fn lossy_codecs_are_strictly_rejected_in_archival_mode() {
+    let p = example("rawvideo");
+    for pref in [
+        CodecPreference::H264,
+        CodecPreference::Hevc,
+        CodecPreference::Av1,
+        CodecPreference::Vp9,
+    ] {
+        let plan = choose_plan_with_preference(&p, Mode::Archival, pref, None);
+        assert!(
+            matches!(plan, Decision::Skip { ref reason } if reason.contains("lossless")),
+            "Archival mode must reject lossy preference {pref:?}"
+        );
+    }
+}
+
+#[test]
+fn ffv1_is_rejected_in_publishing_mode() {
+    let p = example("prores");
+    let plan = choose_plan_with_preference(&p, Mode::Publishing, CodecPreference::Ffv1, None);
+    assert!(matches!(plan, Decision::Skip { ref reason } if reason.contains("archival")));
+}
+
+#[test]
+fn missing_runtime_encoder_skips_plan_with_informative_reason() {
+    let p = example("prores");
+    let available = vec!["libx264".to_string(), "ffv1".to_string()];
+    let plan =
+        choose_plan_with_preference(&p, Mode::Publishing, CodecPreference::Av1, Some(&available));
+    assert_eq!(
+        plan,
+        Decision::Skip {
+            reason: "required encoder 'libsvtav1' is not available in ffmpeg installation".into()
+        }
+    );
+}
+
+#[test]
+fn container_compatibility_validation_rules() {
+    assert!(validate_container_compatibility("ffv1", "mkv").is_ok());
+    assert!(validate_container_compatibility("ffv1", "mp4").is_err());
+    assert!(validate_container_compatibility("libvpx-vp9", "webm").is_ok());
+    assert!(validate_container_compatibility("libvpx-vp9", "mkv").is_ok());
+    assert!(validate_container_compatibility("libvpx-vp9", "mp4").is_err());
+    assert!(validate_container_compatibility("libx264", "mp4").is_ok());
+    assert!(validate_container_compatibility("libx264", "webm").is_err());
+    assert!(validate_container_compatibility("libx265", "mp4").is_ok());
+    assert!(validate_container_compatibility("libsvtav1", "mp4").is_ok());
+    assert!(validate_container_compatibility("libsvtav1", "mkv").is_ok());
 }

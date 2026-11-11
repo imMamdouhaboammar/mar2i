@@ -1,9 +1,11 @@
 use mar2i_core::discovery::{discover, validate_directories};
 use mar2i_core::media::inspect;
-use mar2i_core::policy::{Decision, Mode, choose_plan};
+use mar2i_core::policy::{CodecPreference, Decision, Mode, choose_plan};
 use mar2i_core::queue::BatchQueue;
 use mar2i_core::report::{report_csv, report_html, summarize};
-use mar2i_core::worker::{Control, ResourceProfile, modified_ns, run_batch};
+use mar2i_core::worker::{
+    BatchOptions, Control, ResourceProfile, modified_ns, run_batch_with_options,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -81,6 +83,18 @@ fn parse_profile(profile: &str) -> Result<ResourceProfile, String> {
         "balanced" => Ok(ResourceProfile::Balanced),
         "maximum" => Ok(ResourceProfile::Maximum),
         _ => Err("ملف استهلاك الموارد غير معروف".into()),
+    }
+}
+
+fn parse_codec(codec: &str) -> Result<CodecPreference, String> {
+    match codec {
+        "auto" => Ok(CodecPreference::Auto),
+        "h264" => Ok(CodecPreference::H264),
+        "hevc" => Ok(CodecPreference::Hevc),
+        "av1" => Ok(CodecPreference::Av1),
+        "vp9" => Ok(CodecPreference::Vp9),
+        "ffv1" => Ok(CodecPreference::Ffv1),
+        _ => Err("الترميز المحدد غير مدعوم".into()),
     }
 }
 
@@ -165,11 +179,7 @@ fn start_batch(
 ) -> Result<(), String> {
     let mode = parse_mode(&mode)?;
     let profile = parse_profile(&profile)?;
-    if codec != "auto" {
-        return Err(
-            "الترميز اليدوي غير مفعل بعد في النسخة الحالية. اختر «تلقائي» للمعالجة الفعلية".into(),
-        );
-    }
+    let preference = parse_codec(&codec)?;
     let input = PathBuf::from(input);
     let output = PathBuf::from(output);
     validate_paths(&input, &output)?;
@@ -202,13 +212,16 @@ fn start_batch(
                     modified_ns(&file.absolute)?,
                 )?;
             }
-            run_batch(
+            run_batch_with_options(
                 &queue,
                 &media_binary("ffmpeg"),
                 &media_binary("ffprobe"),
                 &output,
-                mode,
-                profile,
+                BatchOptions {
+                    mode,
+                    profile,
+                    preference,
+                },
                 &control,
             )?;
             let jobs = queue.list()?;

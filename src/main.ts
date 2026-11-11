@@ -224,7 +224,7 @@ function renderNew(): string {
 function codecRow(codec: typeof codecs[number]): string {
   const active = state.codec === codec.id
   return `<div class="codec-row${active ? ' selected' : ''}" role="row">
-    <div class="codec-name" role="cell"><input type="radio" name="codec" value="${codec.id}" ${active ? 'checked' : ''} ${isDesktop && codec.id !== 'auto' ? 'disabled' : ''} aria-label="اختيار ${codec.name}" /><strong dir="auto">${codec.name}</strong><button class="tiny-help${state.help === codec.id ? ' is-current' : ''}" data-help="${codec.id}" type="button" aria-label="شرح ${codec.name}">${icon('help', 18)}</button></div>
+    <div class="codec-name" role="cell"><input type="radio" name="codec" value="${codec.id}" ${active ? 'checked' : ''} aria-label="اختيار ${codec.name}" /><strong dir="auto">${codec.name}</strong><button class="tiny-help${state.help === codec.id ? ' is-current' : ''}" data-help="${codec.id}" type="button" aria-label="شرح ${codec.name}">${icon('help', 18)}</button></div>
     <span role="cell">${codec.size}</span><span role="cell">${codec.speed}</span><span role="cell">${codec.compatibility}</span>
   </div>`
 }
@@ -247,7 +247,7 @@ function renderOptions(): string {
     <div class="segmented" role="group" aria-label="غرض المعالجة"><button class="${state.mode === 'publish' ? 'active' : ''}" data-mode="publish" aria-pressed="${state.mode === 'publish'}">النشر والمشاركة</button><button class="${state.mode === 'archive' ? 'active' : ''}" data-mode="archive" aria-pressed="${state.mode === 'archive'}">الأرشفة عالية الجودة</button></div>
 
     <!-- Live Predictive Storage Savings Meter Mount -->
-    ${isDesktop ? '<p class="inline-warning">مقارنة الترميزات للشرح فقط. الترميز اليدوي والتقدير الفعلي للحجم غير متاحين بعد</p>' : '<div id="storage-meter-mount"></div>'}
+    ${isDesktop ? '' : '<div id="storage-meter-mount"></div>'}
 
     <!-- Official Ministry Presets -->
     ${isDesktop ? '' : `<div class="preset-section">
