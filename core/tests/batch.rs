@@ -69,8 +69,8 @@ fn real_two_file_batch_is_durable_and_reports_verified_savings() {
     let jobs = queue.list().unwrap();
     assert_eq!(jobs.len(), 2);
     let summary = summarize(&jobs);
-    assert_eq!(summary.completed, 1);
-    assert_eq!(summary.failed, 1);
+    assert_eq!(summary.completed, 1, "jobs: {jobs:#?}");
+    assert_eq!(summary.failed, 1, "jobs: {jobs:#?}");
     assert!(summary.verified_savings_bytes > 0);
     assert!(output.join("مجلد/خام.avi.mar2i.mkv").is_file());
     assert!(report_csv(&jobs).contains("مجلد/خام.avi"));
