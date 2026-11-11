@@ -1,7 +1,58 @@
 use mar2i_core::policy::Mode;
 use mar2i_core::queue::{BatchQueue, JobCompletion};
-use std::fs;
+use mar2i_core::worker::{Control, ResourceProfile, run_batch};
+use std::fs::{self, File};
+use std::path::Path;
 use tempfile::tempdir;
+
+#[test]
+fn another_owner_prevents_recovery_from_interrupting_an_active_job() {
+    let tmp = tempdir().unwrap();
+    let input = tmp.path().join("input");
+    let output = tmp.path().join("output");
+    fs::create_dir_all(&input).unwrap();
+    fs::create_dir_all(&output).unwrap();
+    let db = tmp.path().join("batch.sqlite");
+    let queue = BatchQueue::open(&db, &input, &output, Mode::Archival).unwrap();
+    let source = input.join("source.mp4");
+    fs::write(&source, b"media").unwrap();
+    queue.enqueue("source.mp4", &source, 5, 123).unwrap();
+    queue.claim_next().unwrap().unwrap();
+
+    // Separate OS file handle simulates a second process holding the processing lease.
+    let lock = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(db.with_extension("sqlite.lock"))
+        .unwrap();
+    lock.try_lock().unwrap();
+    assert!(queue.recover().is_err());
+    assert!(
+        run_batch(
+            &queue,
+            Path::new("ffmpeg"),
+            Path::new("ffprobe"),
+            &output,
+            Mode::Archival,
+            ResourceProfile::Low,
+            &Control::default(),
+        )
+        .is_err(),
+        "a second process must not begin work while the lease is owned"
+    );
+    assert_eq!(queue.list().unwrap()[0].status, "processing");
+    let status_reader = BatchQueue::open(&db, &input, &output, Mode::Archival).unwrap();
+    assert_eq!(
+        status_reader.list().unwrap()[0].status,
+        "processing",
+        "status polling must remain available while processing is locked"
+    );
+
+    drop(lock);
+    assert_eq!(queue.recover().unwrap(), 1);
+}
 
 #[test]
 fn repeated_discovery_is_idempotent_and_claims_each_job_at_most_once() {
