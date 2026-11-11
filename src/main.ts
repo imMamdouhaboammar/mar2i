@@ -807,11 +807,17 @@ async function pollNative(): Promise<void> {
   try {
     const current = await nativeStatus()
     state.batch = current
-    if (!current.running && !current.paused && (current.completed + current.skipped + current.failed > 0)) {
-      if (nativeTimer !== null) clearInterval(nativeTimer)
-      nativeTimer = null
-      changeScreen('results')
-      return
+    if (!current.running && !current.paused) {
+      if (current.completed + current.skipped + current.failed > 0 && !current.cancelled) {
+        if (nativeTimer !== null) clearInterval(nativeTimer)
+        nativeTimer = null
+        changeScreen('results')
+        return
+      }
+      if (current.cancelled || current.queued === 0) {
+        if (nativeTimer !== null) clearInterval(nativeTimer)
+        nativeTimer = null
+      }
     }
     render()
   } catch (error) {
