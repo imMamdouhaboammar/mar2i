@@ -57,9 +57,8 @@ jobs:
         run: cargo clippy --all-targets --manifest-path core/Cargo.toml -- -D warnings
 
       - name: Install FFmpeg for integration tests
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
+        timeout-minutes: 5
+        run: sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ffmpeg
 
       - name: Tests (core)
         env:
