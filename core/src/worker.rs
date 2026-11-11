@@ -1,5 +1,5 @@
 use crate::policy::Mode;
-use crate::queue::{BatchQueue, Job};
+use crate::queue::{BatchQueue, Job, JobCompletion};
 use crate::runner::{RunOutcome, run_one};
 use anyhow::{Context, Result, bail};
 use std::fs;
@@ -59,9 +59,15 @@ impl Control {
     }
 
     fn wait_until_active(&self) -> bool {
-        let mut guard = self.mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut guard = self
+            .mutex
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         while self.paused.load(Ordering::SeqCst) && !self.cancelled.load(Ordering::SeqCst) {
-            guard = self.wake.wait(guard).unwrap_or_else(|poisoned| poisoned.into_inner());
+            guard = self
+                .wake
+                .wait(guard)
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
         }
         !self.cancelled.load(Ordering::SeqCst)
     }
@@ -108,21 +114,71 @@ fn process_next(
     job: Job,
 ) -> Result<()> {
     let start = Instant::now();
-    let result = check_job_source(&job).and_then(|_| run_one(
-        ffmpeg, ffprobe, Path::new(&job.source), Path::new(&job.relative), output, mode
-    ));
+    let result = check_job_source(&job).and_then(|_| {
+        run_one(
+            ffmpeg,
+            ffprobe,
+            Path::new(&job.source),
+            Path::new(&job.relative),
+            output,
+            mode,
+        )
+    });
     let elapsed = start.elapsed().as_millis().min(i64::MAX as u128) as u64;
     match result {
-        Ok(RunOutcome::Accepted { output, after, quality, .. }) => {
-            queue.finish(job.id, "completed", Some(&output), Some(after), Some(&quality), None, elapsed)
-        }
-        Ok(RunOutcome::Copied { output, bytes, reason }) => {
-            queue.finish(job.id, "skipped", Some(&output), Some(bytes), Some("byte-identical copy"), Some(&reason), elapsed)
-        }
-        Ok(RunOutcome::Skipped { reason } | RunOutcome::Rejected { reason }) => {
-            queue.finish(job.id, "skipped", None, None, None, Some(&reason), elapsed)
-        }
-        Err(error) => queue.finish(job.id, "failed", None, None, None, Some(&format!("{error:#}")), elapsed),
+        Ok(RunOutcome::Accepted {
+            output,
+            after,
+            quality,
+            ..
+        }) => queue.finish(
+            job.id,
+            JobCompletion {
+                status: "completed",
+                output: Some(&output),
+                bytes: Some(after),
+                quality: Some(&quality),
+                reason: None,
+                elapsed_ms: elapsed,
+            },
+        ),
+        Ok(RunOutcome::Copied {
+            output,
+            bytes,
+            reason,
+        }) => queue.finish(
+            job.id,
+            JobCompletion {
+                status: "skipped",
+                output: Some(&output),
+                bytes: Some(bytes),
+                quality: Some("byte-identical copy"),
+                reason: Some(&reason),
+                elapsed_ms: elapsed,
+            },
+        ),
+        Ok(RunOutcome::Skipped { reason } | RunOutcome::Rejected { reason }) => queue.finish(
+            job.id,
+            JobCompletion {
+                status: "skipped",
+                output: None,
+                bytes: None,
+                quality: None,
+                reason: Some(&reason),
+                elapsed_ms: elapsed,
+            },
+        ),
+        Err(error) => queue.finish(
+            job.id,
+            JobCompletion {
+                status: "failed",
+                output: None,
+                bytes: None,
+                quality: None,
+                reason: Some(&format!("{error:#}")),
+                elapsed_ms: elapsed,
+            },
+        ),
     }
 }
 
@@ -140,23 +196,33 @@ pub fn run_batch(
     }
     // Prevent OS idle sleep during batch encoding
     let _keep_awake = crate::keep_awake::KeepAwake::acquire();
-    let cores = thread::available_parallelism().map(|value| value.get()).unwrap_or(1);
+    let cores = thread::available_parallelism()
+        .map(|value| value.get())
+        .unwrap_or(1);
     let mut system = System::new();
     system.refresh_memory();
     let worker_count = worker_limit(profile, cores, system.available_memory());
     thread::scope(|scope| -> Result<()> {
-        let handles = (0..worker_count).map(|_| scope.spawn(|| -> Result<()> {
-            loop {
-                if !control.wait_until_active() {
-                    break;
-                }
-                let Some(job) = queue.claim_next()? else { break };
-                process_next(queue, ffmpeg, ffprobe, output, mode, job)?;
-            }
-            Ok(())
-        })).collect::<Vec<_>>();
+        let handles = (0..worker_count)
+            .map(|_| {
+                scope.spawn(|| -> Result<()> {
+                    loop {
+                        if !control.wait_until_active() {
+                            break;
+                        }
+                        let Some(job) = queue.claim_next()? else {
+                            break;
+                        };
+                        process_next(queue, ffmpeg, ffprobe, output, mode, job)?;
+                    }
+                    Ok(())
+                })
+            })
+            .collect::<Vec<_>>();
         for handle in handles {
-            handle.join().map_err(|_| anyhow::anyhow!("worker panicked"))??;
+            handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("worker panicked"))??;
         }
         Ok(())
     })

@@ -23,13 +23,12 @@ pub fn run_mcp_server<R: BufRead, W: Write>(mut reader: R, mut writer: W, ffmpeg
         }
 
         let trimmed = line.trim();
-        if !trimmed.is_empty() {
-            if let Ok(request) = serde_json::from_str::<Value>(trimmed) {
-                if let Some(response) = handle_jsonrpc_message(&request, ffmpeg) {
-                    let _ = writeln!(writer, "{}", response);
-                    let _ = writer.flush();
-                }
-            }
+        if !trimmed.is_empty()
+            && let Ok(request) = serde_json::from_str::<Value>(trimmed)
+            && let Some(response) = handle_jsonrpc_message(&request, ffmpeg)
+        {
+            let _ = writeln!(writer, "{}", response);
+            let _ = writer.flush();
         }
 
         line.clear();
@@ -41,32 +40,28 @@ fn handle_jsonrpc_message(msg: &Value, ffmpeg: &Path) -> Option<Value> {
     let method = msg.get("method").and_then(Value::as_str)?;
 
     match method {
-        "initialize" => {
-            Some(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {
-                    "protocolVersion": PROTOCOL_VERSION,
-                    "serverInfo": {
-                        "name": "mar2i-mcp",
-                        "version": "0.1.0"
-                    },
-                    "capabilities": {
-                        "tools": {}
-                    }
+        "initialize" => Some(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "protocolVersion": PROTOCOL_VERSION,
+                "serverInfo": {
+                    "name": "mar2i-mcp",
+                    "version": "0.1.0"
+                },
+                "capabilities": {
+                    "tools": {}
                 }
-            }))
-        }
+            }
+        })),
         "notifications/initialized" => None,
-        "tools/list" => {
-            Some(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {
-                    "tools": get_tool_definitions()
-                }
-            }))
-        }
+        "tools/list" => Some(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "tools": get_tool_definitions()
+            }
+        })),
         "tools/call" => {
             let params = msg.get("params")?;
             let tool_name = params.get("name").and_then(Value::as_str)?;
@@ -79,23 +74,19 @@ fn handle_jsonrpc_message(msg: &Value, ffmpeg: &Path) -> Option<Value> {
                 "result": tool_result
             }))
         }
-        "ping" => {
-            Some(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {}
-            }))
-        }
-        _ => {
-            Some(json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "error": {
-                    "code": -32601,
-                    "message": format!("Method not found: {}", method)
-                }
-            }))
-        }
+        "ping" => Some(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {}
+        })),
+        _ => Some(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {
+                "code": -32601,
+                "message": format!("Method not found: {}", method)
+            }
+        })),
     }
 }
 

@@ -6,7 +6,7 @@
 
 use crate::media::InspectedMedia;
 use crate::policy::Mode;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -89,10 +89,10 @@ fn get_media_duration_seconds(media: &InspectedMedia) -> f64 {
     if media.duration > 0.0 {
         return media.duration;
     }
-    if let Some(bitrate) = media.profile.video_bitrate {
-        if bitrate > 0 {
-            return (media.input_bytes * 8) as f64 / bitrate as f64;
-        }
+    if let Some(bitrate) = media.profile.video_bitrate
+        && bitrate > 0
+    {
+        return (media.input_bytes * 8) as f64 / bitrate as f64;
     }
     0.0 // Unknown duration must remain unknown
 }
@@ -157,14 +157,14 @@ fn run_stratified_samples(
             .arg(&sample_out)
             .output();
 
-        if let Ok(res) = status {
-            if res.status.success() && sample_out.is_file() {
-                if let Ok(meta) = fs::metadata(&sample_out) {
-                    total_sample_bytes += meta.len();
-                    total_sample_sec += sample_duration;
-                    successful_samples += 1;
-                }
-            }
+        if let Ok(res) = status
+            && res.status.success()
+            && sample_out.is_file()
+            && let Ok(meta) = fs::metadata(&sample_out)
+        {
+            total_sample_bytes += meta.len();
+            total_sample_sec += sample_duration;
+            successful_samples += 1;
         }
     }
 
