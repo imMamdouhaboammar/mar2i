@@ -193,7 +193,39 @@ fn copy_hash(path: &Path) -> Result<Vec<u8>> {
 
 fn source_changed(source: &Path, starting: &fs::Metadata) -> Result<bool> {
     let current = fs::symlink_metadata(source)?;
+    if current.file_type().is_symlink() || !current.file_type().is_file() {
+        return Ok(true);
+    }
     Ok(current.len() != starting.len() || current.modified()? != starting.modified()?)
+}
+
+fn publish_safely(temporary: &Path, destination: &Path) -> Result<()> {
+    if fs::symlink_metadata(destination).is_ok() {
+        bail!("output file already exists; refusing to overwrite");
+    }
+
+    match fs::hard_link(temporary, destination) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Check if destination appeared concurrently
+            if fs::symlink_metadata(destination).is_ok() {
+                bail!("destination appeared concurrently; refusing to overwrite");
+            }
+            // Fallback for filesystems that do not support hard links (e.g. FAT32, exFAT, some network mounts):
+            // Safely write to destination using create_new(true) (O_CREAT | O_EXCL) to prevent overwrite.
+            let mut src = File::open(temporary)?;
+            let mut dst = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(destination)
+                .with_context(|| {
+                    format!("cannot create destination at {}", destination.display())
+                })?;
+            std::io::copy(&mut src, &mut dst)?;
+            dst.sync_all()?;
+            Ok(())
+        }
+    }
 }
 
 fn make_output_name(relative: &Path, extension: &str, copy: bool) -> Result<PathBuf> {
@@ -502,14 +534,7 @@ pub fn run_one_with_control(
             ),
         });
     }
-    // Same-directory hard link publishes only if destination is absent; unlike rename,
-    // it cannot replace an unrelated file created concurrently.
-    fs::hard_link(temporary, &destination).with_context(|| {
-        format!(
-            "cannot atomically publish without overwrite at {}",
-            destination.display()
-        )
-    })?;
+    publish_safely(temporary, &destination)?;
 
     if let Decision::Copy { reason } = decision {
         Ok(RunOutcome::Copied {

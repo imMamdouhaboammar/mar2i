@@ -59,6 +59,20 @@ fn job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
     })
 }
 
+fn cleanup_partial_outputs(root: &Path) {
+    if !root.is_dir() {
+        return;
+    }
+    for entry in walkdir::WalkDir::new(root).into_iter().flatten() {
+        if entry.file_type().is_file() {
+            let name = entry.file_name().to_string_lossy();
+            if name.starts_with(".mar2i-partial-") {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
 const JOB_COLUMNS: &str = "id, relative, source, input_bytes, modified_ns, status, output, output_bytes, reason, quality, elapsed_ms";
 
 impl BatchQueue {
@@ -223,6 +237,15 @@ impl BatchQueue {
         Ok(())
     }
 
+    pub fn output_root(&self) -> Result<PathBuf> {
+        let connection = self.connect()?;
+        let root: String =
+            connection.query_row("SELECT output_root FROM batch WHERE id=1", [], |row| {
+                row.get(0)
+            })?;
+        Ok(PathBuf::from(root))
+    }
+
     pub fn recover(&self) -> Result<usize> {
         let connection = self.connect()?;
         let count = connection.execute(
@@ -230,6 +253,9 @@ impl BatchQueue {
              WHERE status IN ('processing','verifying')",
             [],
         )?;
+        if let Ok(root) = self.output_root() {
+            cleanup_partial_outputs(&root);
+        }
         Ok(count)
     }
 
