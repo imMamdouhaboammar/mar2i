@@ -15,11 +15,34 @@ fn ffprobe_detects_actual_streams_in_synthetic_video() {
     let tmp = tempdir().unwrap();
     let input = tmp.path().join("الاختبار.mp4");
     let result = Command::new(binary("ffmpeg"))
-        .args(["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=24",
-        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "1",
-        "-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", "-y"])
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x180:rate=24",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000",
+            "-t",
+            "1",
+            "-c:v",
+            "libx264",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            "-y",
+        ])
         .arg(&input)
-        .status().unwrap();
+        .status()
+        .unwrap();
     assert!(result.success());
     let media = inspect(&binary("ffprobe"), &input).unwrap();
     assert_eq!(media.profile.codec, "h264");

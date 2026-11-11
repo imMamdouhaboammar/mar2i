@@ -40,7 +40,9 @@ fn mcp_server_handles_initialize_and_tools_list() {
 
     let tools_res: Value = serde_json::from_str(lines[1]).expect("json parse tools");
     assert_eq!(tools_res["id"], 2);
-    let tools = tools_res["result"]["tools"].as_array().expect("tools array");
+    let tools = tools_res["result"]["tools"]
+        .as_array()
+        .expect("tools array");
     assert!(tools.iter().any(|t| t["name"] == "mar2i_analyze_directory"));
     assert!(tools.iter().any(|t| t["name"] == "mar2i_detect_hardware"));
     assert!(tools.iter().any(|t| t["name"] == "mar2i_list_profiles"));
@@ -71,5 +73,10 @@ fn mcp_server_executes_tool_call_list_profiles() {
     let output_str = String::from_utf8(writer).expect("valid utf8 output");
     let res: Value = serde_json::from_str(output_str.trim()).expect("json parse");
     assert_eq!(res["id"], 42);
-    assert!(res["result"]["content"][0]["text"].as_str().unwrap().contains("master_archive"));
+    assert!(
+        res["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("master_archive")
+    );
 }

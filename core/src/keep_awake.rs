@@ -35,7 +35,9 @@ impl KeepAwake {
             if prev.is_some() {
                 IS_ACTIVE.store(true, Ordering::SeqCst);
             }
-            Self { previous_state: prev }
+            Self {
+                previous_state: prev,
+            }
         }
 
         #[cfg(not(any(target_os = "macos", windows)))]

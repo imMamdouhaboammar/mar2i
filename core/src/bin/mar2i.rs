@@ -74,7 +74,10 @@ fn command_line() -> Result<()> {
 
     // MCP Server mode
     if action == "mcp" {
-        let ffmpeg = args.get(2).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("ffmpeg"));
+        let ffmpeg = args
+            .get(2)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("ffmpeg"));
         let stdin = io::stdin();
         let stdout = io::stdout();
         run_mcp_server(stdin.lock(), stdout.lock(), &ffmpeg);
@@ -83,7 +86,10 @@ fn command_line() -> Result<()> {
 
     // Hardware acceleration probe mode
     if action == "probe-hw" {
-        let ffmpeg = args.get(2).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("ffmpeg"));
+        let ffmpeg = args
+            .get(2)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("ffmpeg"));
         let report = detect_hardware(&ffmpeg);
         println!("{}", serde_json::to_string_pretty(&report)?);
         return Ok(());
@@ -113,13 +119,32 @@ fn command_line() -> Result<()> {
             bail!("usage: mar2i estimate <file-path> [ffmpeg-bin] [ffprobe-bin] [codec] [crf]");
         }
         let file_path = PathBuf::from(&args[2]);
-        let ffmpeg = args.get(3).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("ffmpeg"));
-        let ffprobe = args.get(4).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("ffprobe"));
-        let codec = args.get(5).map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "hevc".into());
-        let crf = args.get(6).and_then(|s| s.to_string_lossy().parse::<u8>().ok()).unwrap_or(22);
+        let ffmpeg = args
+            .get(3)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("ffmpeg"));
+        let ffprobe = args
+            .get(4)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("ffprobe"));
+        let codec = args
+            .get(5)
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "hevc".into());
+        let crf = args
+            .get(6)
+            .and_then(|s| s.to_string_lossy().parse::<u8>().ok())
+            .unwrap_or(22);
 
         let inspected = inspect(&ffprobe, &file_path)?;
-        let est = estimate_video_size(&ffmpeg, &file_path, &inspected, &codec, crf, Mode::Publishing)?;
+        let est = estimate_video_size(
+            &ffmpeg,
+            &file_path,
+            &inspected,
+            &codec,
+            crf,
+            Mode::Publishing,
+        )?;
         println!("{}", serde_json::to_string_pretty(&est)?);
         return Ok(());
     }
@@ -132,9 +157,20 @@ fn command_line() -> Result<()> {
     let input = PathBuf::from(&args[2]);
     let output = PathBuf::from(&args[3]);
     let mode = mode_from(&args[4].to_string_lossy())?;
-    let profile = profile_from(&args.get(5).map(|value| value.to_string_lossy()).unwrap_or("balanced".into()))?;
-    let ffmpeg = args.get(6).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("ffmpeg"));
-    let ffprobe = args.get(7).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("ffprobe"));
+    let profile = profile_from(
+        &args
+            .get(5)
+            .map(|value| value.to_string_lossy())
+            .unwrap_or("balanced".into()),
+    )?;
+    let ffmpeg = args
+        .get(6)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("ffmpeg"));
+    let ffprobe = args
+        .get(7)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("ffprobe"));
 
     validate_directories(&input, &output)?;
     let files = discover(&input)?;
@@ -146,10 +182,17 @@ fn command_line() -> Result<()> {
                     let plan = choose_plan(&info.profile, mode);
                     let label = match plan {
                         Decision::Copy { ref reason } => format!("COPY: {reason}"),
-                        Decision::Encode { codec, container, .. } => format!("ENCODE: {codec} -> {container}"),
+                        Decision::Encode {
+                            codec, container, ..
+                        } => format!("ENCODE: {codec} -> {container}"),
                         Decision::Skip { ref reason } => format!("SKIP: {reason}"),
                     };
-                    println!("{}\t{}\t{}", file.relative.display(), info.profile.codec, label);
+                    println!(
+                        "{}\t{}\t{}",
+                        file.relative.display(),
+                        info.profile.codec,
+                        label
+                    );
                 }
                 Err(error) => println!("{}\tUNSUPPORTED: {error:#}", file.relative.display()),
             }
@@ -168,7 +211,9 @@ fn command_line() -> Result<()> {
     if action == "run" {
         let interrupted = queue.recover()?;
         if interrupted != 0 {
-            println!("Recovered {interrupted} interrupted jobs; unfinished encodes restart from the beginning");
+            println!(
+                "Recovered {interrupted} interrupted jobs; unfinished encodes restart from the beginning"
+            );
         }
         for file in files {
             queue.enqueue(

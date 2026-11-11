@@ -10,10 +10,23 @@ use tempfile::Builder;
 
 #[derive(Debug, Clone)]
 pub enum RunOutcome {
-    Accepted { output: PathBuf, before: u64, after: u64, quality: String },
-    Copied { output: PathBuf, bytes: u64, reason: String },
-    Skipped { reason: String },
-    Rejected { reason: String },
+    Accepted {
+        output: PathBuf,
+        before: u64,
+        after: u64,
+        quality: String,
+    },
+    Copied {
+        output: PathBuf,
+        bytes: u64,
+        reason: String,
+    },
+    Skipped {
+        reason: String,
+    },
+    Rejected {
+        reason: String,
+    },
 }
 
 fn checked_command(result: Output, operation: &str) -> Result<Output> {
@@ -27,7 +40,9 @@ fn checked_command(result: Output, operation: &str) -> Result<Output> {
 
 fn validated_relative(relative: &Path) -> Result<()> {
     if relative.as_os_str().is_empty()
-        || !relative.components().all(|part| matches!(part, Component::Normal(_)))
+        || !relative
+            .components()
+            .all(|part| matches!(part, Component::Normal(_)))
     {
         bail!("source-relative path contains traversal or absolute components");
     }
@@ -54,7 +69,9 @@ fn source_changed(source: &Path, starting: &fs::Metadata) -> Result<bool> {
 }
 
 fn make_output_name(relative: &Path, extension: &str, copy: bool) -> Result<PathBuf> {
-    let filename = relative.file_name().context("relative path has no filename")?;
+    let filename = relative
+        .file_name()
+        .context("relative path has no filename")?;
     if copy {
         return Ok(relative.to_path_buf());
     }
@@ -101,8 +118,12 @@ fn ssim_score(ffmpeg: &Path, source: &Path, output: &Path) -> Result<f64> {
         .output()?;
     let result = checked_command(result, "SSIM measurement")?;
     let log = String::from_utf8_lossy(&result.stderr);
-    let value = log.rsplit("All:").next().context("SSIM score unavailable")?;
-    let literal: String = value.chars()
+    let value = log
+        .rsplit("All:")
+        .next()
+        .context("SSIM score unavailable")?;
+    let literal: String = value
+        .chars()
         .take_while(|letter| letter.is_ascii_digit() || *letter == '.')
         .collect();
     let score = literal.parse::<f64>().context("invalid SSIM measurement")?;
@@ -112,19 +133,26 @@ fn ssim_score(ffmpeg: &Path, source: &Path, output: &Path) -> Result<f64> {
     Ok(score)
 }
 
-fn verify_stream_contract(source: &InspectedMedia, accepted: &InspectedMedia, mode: Mode) -> Result<()> {
+fn verify_stream_contract(
+    source: &InspectedMedia,
+    accepted: &InspectedMedia,
+    mode: Mode,
+) -> Result<()> {
     let original = &source.profile;
     let output = &accepted.profile;
     if original.width != output.width || original.height != output.height {
         bail!("output resolution changed");
     }
-    if (source.duration - accepted.duration).abs() > (2.0 / original.frame_rate.max(1.0)).max(0.15) {
+    if (source.duration - accepted.duration).abs() > (2.0 / original.frame_rate.max(1.0)).max(0.15)
+    {
         bail!("duration exceeds permitted timing difference");
     }
     if (original.frame_rate - output.frame_rate).abs() > 0.01 {
         bail!("frame rate changed");
     }
-    if source.audio_count != accepted.audio_count || source.subtitle_count != accepted.subtitle_count {
+    if source.audio_count != accepted.audio_count
+        || source.subtitle_count != accepted.subtitle_count
+    {
         bail!("audio or subtitle stream count changed");
     }
     if mode == Mode::Archival {
@@ -155,7 +183,11 @@ pub fn run_one(
     let decision = choose_plan(&input.profile, mode);
 
     let (extension, copy) = match &decision {
-        Decision::Skip { reason } => return Ok(RunOutcome::Skipped { reason: reason.clone() }),
+        Decision::Skip { reason } => {
+            return Ok(RunOutcome::Skipped {
+                reason: reason.clone(),
+            });
+        }
         Decision::Copy { .. } => ("", true),
         Decision::Encode { container, .. } => (*container, false),
     };
@@ -175,8 +207,17 @@ pub fn run_one(
         bail!("output file already exists; refusing to overwrite");
     }
 
-    let suffix = if copy { ".copy" } else if extension == "mkv" { ".mkv" } else { ".mp4" };
-    let tempfile = Builder::new().prefix(".mar2i-partial-").suffix(suffix).tempfile_in(parent)?;
+    let suffix = if copy {
+        ".copy"
+    } else if extension == "mkv" {
+        ".mkv"
+    } else {
+        ".mp4"
+    };
+    let tempfile = Builder::new()
+        .prefix(".mar2i-partial-")
+        .suffix(suffix)
+        .tempfile_in(parent)?;
     let temporary = tempfile.path();
     let quality = match decision {
         Decision::Copy { ref reason } => {
@@ -191,10 +232,34 @@ pub fn run_one(
             let result = Command::new(ffmpeg)
                 .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
                 .arg(source)
-                .args(["-map", "0", "-map_metadata", "0", "-map_chapters", "0",
-                    "-c:v", "ffv1", "-level", "3", "-coder", "1", "-context", "1",
-                    "-slicecrc", "1", "-threads", "2", "-fps_mode", "passthrough", "-c:a", "copy", "-c:s", "copy"])
-                .arg(temporary).output()?;
+                .args([
+                    "-map",
+                    "0",
+                    "-map_metadata",
+                    "0",
+                    "-map_chapters",
+                    "0",
+                    "-c:v",
+                    "ffv1",
+                    "-level",
+                    "3",
+                    "-coder",
+                    "1",
+                    "-context",
+                    "1",
+                    "-slicecrc",
+                    "1",
+                    "-threads",
+                    "2",
+                    "-fps_mode",
+                    "passthrough",
+                    "-c:a",
+                    "copy",
+                    "-c:s",
+                    "copy",
+                ])
+                .arg(temporary)
+                .output()?;
             checked_command(result, "lossless archival encoding")?;
             verify_decode(ffmpeg, temporary)?;
             let accepted = inspect(ffprobe, temporary)?;
@@ -204,16 +269,44 @@ pub fn run_one(
             }
             "decoded-frame hashes identical".to_owned()
         }
-        Decision::Encode { codec: "libx264", crf, .. } => {
+        Decision::Encode {
+            codec: "libx264",
+            crf,
+            ..
+        } => {
             let result = Command::new(ffmpeg)
                 .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
                 .arg(source)
-                .args(["-map", "0:v:0", "-map", "0:a?", "-map_metadata", "0", "-map_chapters", "0",
-                    "-c:v", "libx264", "-preset", "medium", "-crf"])
+                .args([
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a?",
+                    "-map_metadata",
+                    "0",
+                    "-map_chapters",
+                    "0",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "medium",
+                    "-crf",
+                ])
                 .arg(crf.to_string())
-                .args(["-fps_mode", "passthrough", "-threads", "2", "-pix_fmt", "yuv420p",
-                    "-c:a", "copy", "-movflags", "+faststart"])
-                .arg(temporary).output()?;
+                .args([
+                    "-fps_mode",
+                    "passthrough",
+                    "-threads",
+                    "2",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-c:a",
+                    "copy",
+                    "-movflags",
+                    "+faststart",
+                ])
+                .arg(temporary)
+                .output()?;
             checked_command(result, "publishing encoding")?;
             verify_decode(ffmpeg, temporary)?;
             let accepted = inspect(ffprobe, temporary)?;
@@ -221,7 +314,9 @@ pub fn run_one(
             let score = ssim_score(ffmpeg, source, temporary)?;
             if score < 0.965 {
                 return Ok(RunOutcome::Rejected {
-                    reason: format!("SSIM {score:.5} below provisional 0.965 gate; manual quality review needed"),
+                    reason: format!(
+                        "SSIM {score:.5} below provisional 0.965 gate; manual quality review needed"
+                    ),
                 });
             }
             format!("SSIM={score:.5} (automated gate, not proof of visual equivalence)")
@@ -239,17 +334,27 @@ pub fn run_one(
     }
     if !copy && after >= input.input_bytes {
         return Ok(RunOutcome::Rejected {
-            reason: format!("output would be {} bytes, not smaller than {} bytes", after, input.input_bytes),
+            reason: format!(
+                "output would be {} bytes, not smaller than {} bytes",
+                after, input.input_bytes
+            ),
         });
     }
     // Same-directory hard link publishes only if destination is absent; unlike rename,
     // it cannot replace an unrelated file created concurrently.
     fs::hard_link(temporary, &destination).with_context(|| {
-        format!("cannot atomically publish without overwrite at {}", destination.display())
+        format!(
+            "cannot atomically publish without overwrite at {}",
+            destination.display()
+        )
     })?;
 
     if let Decision::Copy { reason } = decision {
-        Ok(RunOutcome::Copied { output: destination, bytes: after, reason })
+        Ok(RunOutcome::Copied {
+            output: destination,
+            bytes: after,
+            reason,
+        })
     } else {
         Ok(RunOutcome::Accepted {
             output: destination,

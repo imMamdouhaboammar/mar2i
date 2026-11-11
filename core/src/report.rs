@@ -13,18 +13,26 @@ pub struct Summary {
 
 fn savings(row: &Job) -> u64 {
     if row.status == "completed" {
-        row.output_bytes.map(|bytes| row.input_bytes.saturating_sub(bytes)).unwrap_or(0)
+        row.output_bytes
+            .map(|bytes| row.input_bytes.saturating_sub(bytes))
+            .unwrap_or(0)
     } else {
         0
     }
 }
 
 pub fn summarize(jobs: &[Job]) -> Summary {
-    let mut summary = Summary { files: jobs.len(), ..Summary::default() };
+    let mut summary = Summary {
+        files: jobs.len(),
+        ..Summary::default()
+    };
     for row in jobs {
         summary.original_bytes = summary.original_bytes.saturating_add(row.input_bytes);
-        summary.published_bytes = summary.published_bytes.saturating_add(row.output_bytes.unwrap_or(0));
-        summary.verified_savings_bytes = summary.verified_savings_bytes.saturating_add(savings(row));
+        summary.published_bytes = summary
+            .published_bytes
+            .saturating_add(row.output_bytes.unwrap_or(0));
+        summary.verified_savings_bytes =
+            summary.verified_savings_bytes.saturating_add(savings(row));
         match row.status.as_str() {
             "completed" => summary.completed += 1,
             "skipped" => summary.skipped += 1,
@@ -37,7 +45,10 @@ pub fn summarize(jobs: &[Job]) -> Summary {
 
 fn csv_cell(value: &str) -> String {
     let sanitized = value.replace(['\r', '\n', '\t'], " ");
-    let potentially_executable = matches!(sanitized.trim_start().chars().next(), Some('=' | '+' | '-' | '@'));
+    let potentially_executable = matches!(
+        sanitized.trim_start().chars().next(),
+        Some('=' | '+' | '-' | '@')
+    );
     let safe = if potentially_executable {
         format!("'{sanitized}")
     } else {
@@ -51,13 +62,19 @@ pub fn report_csv(jobs: &[Job]) -> String {
     csv.push_str("File,Relative source,Destination,Original bytes,Accepted output bytes,Verified saved bytes,Savings %,Duration ms,Throughput bytes/sec,Quality,Status,Reason\n");
     for row in jobs {
         let file = std::path::Path::new(&row.relative)
-            .file_name().and_then(|value| value.to_str()).unwrap_or(&row.relative);
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or(&row.relative);
         let saved = savings(row);
-        let percent = if row.input_bytes == 0 { 0.0 } else {
+        let percent = if row.input_bytes == 0 {
+            0.0
+        } else {
             100.0 * saved as f64 / row.input_bytes as f64
         };
         let speed = match row.elapsed_ms {
-            Some(milliseconds) if milliseconds > 0 => (row.input_bytes as f64 * 1000.0 / milliseconds as f64).round() as u64,
+            Some(milliseconds) if milliseconds > 0 => {
+                (row.input_bytes as f64 * 1000.0 / milliseconds as f64).round() as u64
+            }
             _ => 0,
         };
         let fields = [
@@ -65,10 +82,14 @@ pub fn report_csv(jobs: &[Job]) -> String {
             csv_cell(&row.relative),
             csv_cell(row.output.as_deref().unwrap_or("")),
             row.input_bytes.to_string(),
-            row.output_bytes.map(|value| value.to_string()).unwrap_or_default(),
+            row.output_bytes
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
             saved.to_string(),
             format!("{percent:.2}"),
-            row.elapsed_ms.map(|value| value.to_string()).unwrap_or_default(),
+            row.elapsed_ms
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
             speed.to_string(),
             csv_cell(row.quality.as_deref().unwrap_or("")),
             csv_cell(&row.status),
@@ -81,7 +102,8 @@ pub fn report_csv(jobs: &[Job]) -> String {
 }
 
 fn html_cell(value: &str) -> String {
-    value.replace('&', "&amp;")
+    value
+        .replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
@@ -97,11 +119,17 @@ pub fn report_html(jobs: &[Job]) -> String {
          th{{background:#eef3ef}}.stats{{margin:20px 0}}</style>\
          <h1>تقرير مرئي</h1><p class=\"stats\">الملفات: {} | مكتمل: {} | دون ضغط: {} | فشل: {} | المساحة الموفرة المتحقق منها: {} بايت</p>\
          <table><thead><tr><th>الملف</th><th>المصدر</th><th>المخرجات</th><th>قبل (بايت)</th><th>بعد (بايت)</th><th>توفير (بايت)</th><th>الحالة</th><th>التحقق</th><th>السبب</th></tr></thead><tbody>",
-        totals.files, totals.completed, totals.skipped, totals.failed, totals.verified_savings_bytes
+        totals.files,
+        totals.completed,
+        totals.skipped,
+        totals.failed,
+        totals.verified_savings_bytes
     );
     for job in jobs {
         let name = std::path::Path::new(&job.relative)
-            .file_name().and_then(|value| value.to_str()).unwrap_or(&job.relative);
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or(&job.relative);
         html.push_str(&format!(
             "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             html_cell(name), html_cell(&job.relative), html_cell(job.output.as_deref().unwrap_or("")),

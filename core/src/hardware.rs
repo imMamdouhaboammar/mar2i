@@ -39,7 +39,12 @@ pub struct HardwareReport {
 impl HardwareReport {
     /// Returns the active encoder string for the given target codec and mode.
     /// In Archival mode, hardware acceleration is NEVER used.
-    pub fn select_encoder<'a>(&'a self, target_codec: &'a str, mode: Mode, use_hw: bool) -> &'a str {
+    pub fn select_encoder<'a>(
+        &'a self,
+        target_codec: &'a str,
+        mode: Mode,
+        use_hw: bool,
+    ) -> &'a str {
         if mode == Mode::Archival || !use_hw {
             return default_cpu_encoder(target_codec);
         }

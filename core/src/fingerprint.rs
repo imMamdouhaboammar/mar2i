@@ -28,10 +28,15 @@ pub struct MediaFingerprint {
 
 /// Computes the sparse SHA-256 fingerprint of a media file.
 pub fn compute_fingerprint(path: &Path) -> Result<MediaFingerprint> {
-    let mut file = File::open(path)
-        .with_context(|| format!("unable to open media file for fingerprinting: {}", path.display()))?;
+    let mut file = File::open(path).with_context(|| {
+        format!(
+            "unable to open media file for fingerprinting: {}",
+            path.display()
+        )
+    })?;
 
-    let metadata = file.metadata()
+    let metadata = file
+        .metadata()
         .with_context(|| format!("unable to read metadata for: {}", path.display()))?;
 
     if !metadata.is_file() {
@@ -90,8 +95,12 @@ pub struct FingerprintRegistry {
 
 impl FingerprintRegistry {
     pub fn open_or_create(db_path: &Path) -> Result<Self> {
-        let conn = Connection::open(db_path)
-            .with_context(|| format!("failed to open fingerprint database at: {}", db_path.display()))?;
+        let conn = Connection::open(db_path).with_context(|| {
+            format!(
+                "failed to open fingerprint database at: {}",
+                db_path.display()
+            )
+        })?;
 
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS processed_fingerprints (

@@ -1,6 +1,4 @@
-use mar2i_core::fingerprint::{
-    FingerprintRecord, FingerprintRegistry, compute_fingerprint,
-};
+use mar2i_core::fingerprint::{FingerprintRecord, FingerprintRegistry, compute_fingerprint};
 use std::fs::File;
 use std::io::Write;
 use tempfile::Builder;
@@ -30,7 +28,10 @@ fn sparse_fingerprint_deterministic_on_synthetic_media() -> anyhow::Result<()> {
     let fp1 = compute_fingerprint(&file1)?;
     let fp2 = compute_fingerprint(&file2)?;
 
-    assert_eq!(fp1.hash, fp2.hash, "identical media must produce identical sparse fingerprint");
+    assert_eq!(
+        fp1.hash, fp2.hash,
+        "identical media must produce identical sparse fingerprint"
+    );
     assert_eq!(fp1.size_bytes, 2560 * 1024);
 
     // Modify a tail byte to verify sensitivity
@@ -39,7 +40,10 @@ fn sparse_fingerprint_deterministic_on_synthetic_media() -> anyhow::Result<()> {
     drop(f2_mut);
 
     let fp3 = compute_fingerprint(&file2)?;
-    assert_ne!(fp1.hash, fp3.hash, "fingerprint must change when content changes");
+    assert_ne!(
+        fp1.hash, fp3.hash,
+        "fingerprint must change when content changes"
+    );
 
     Ok(())
 }
@@ -63,7 +67,9 @@ fn fingerprint_registry_sqlite_persistence_and_lookup() -> anyhow::Result<()> {
 
     registry.register(&record)?;
 
-    let found = registry.lookup(&record.fingerprint)?.expect("should find registered fingerprint");
+    let found = registry
+        .lookup(&record.fingerprint)?
+        .expect("should find registered fingerprint");
     assert_eq!(found.source_path, record.source_path);
     assert_eq!(found.input_bytes, record.input_bytes);
     assert_eq!(found.output_bytes, record.output_bytes);

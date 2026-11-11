@@ -9,7 +9,10 @@ fn ministry_profiles_contain_mandated_presets() {
     assert_eq!(archival.mode, "archive");
     assert_eq!(archival.codec, "ffv1");
     assert_eq!(archival.container, "mkv");
-    assert!(!archival.hardware_accelerated, "archival must not use hardware acceleration");
+    assert!(
+        !archival.hardware_accelerated,
+        "archival must not use hardware acceleration"
+    );
     assert_eq!(archival.verification, "framemd5_lossless");
 
     let broadcast = get_profile_by_id("broadcast_hd").expect("broadcast_hd profile must exist");

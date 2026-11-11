@@ -11,20 +11,23 @@ pub struct DiscoveredFile {
 }
 
 const EXTENSIONS: &[&str] = &[
-    "mp4", "mov", "mkv", "mxf", "avi", "webm", "mts", "m2ts", "m4v",
-    "mpg", "mpeg", "ts", "3gp", "wmv",
+    "mp4", "mov", "mkv", "mxf", "avi", "webm", "mts", "m2ts", "m4v", "mpg", "mpeg", "ts", "3gp",
+    "wmv",
 ];
 const MAX_FILES: usize = 1_000_000;
 
 fn canonical_candidate(path: &Path) -> Result<PathBuf> {
     if path.exists() {
-        return fs::canonicalize(path).with_context(|| format!("cannot resolve {}", path.display()));
+        return fs::canonicalize(path)
+            .with_context(|| format!("cannot resolve {}", path.display()));
     }
 
     let mut missing = Vec::new();
     let mut ancestor = path;
     while !ancestor.exists() {
-        let filename = ancestor.file_name().context("path has no existing parent")?;
+        let filename = ancestor
+            .file_name()
+            .context("path has no existing parent")?;
         if filename == ".." || filename == "." {
             bail!("ambiguous directory path");
         }
@@ -47,8 +50,12 @@ pub fn validate_directories(input: &Path, output: &Path) -> Result<()> {
     if source.starts_with(&destination) || destination.starts_with(&source) {
         bail!("input/output directories overlap");
     }
-    if source.components().any(|part| matches!(part, Component::ParentDir))
-        || destination.components().any(|part| matches!(part, Component::ParentDir))
+    if source
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+        || destination
+            .components()
+            .any(|part| matches!(part, Component::ParentDir))
     {
         bail!("parent traversal is not allowed");
     }
@@ -67,7 +74,9 @@ pub fn discover(input: &Path) -> Result<Vec<DiscoveredFile>> {
         if entry.file_type().is_symlink() || !entry.file_type().is_file() {
             continue;
         }
-        let allowed = entry.path().extension()
+        let allowed = entry
+            .path()
+            .extension()
             .and_then(|ext| ext.to_str())
             .is_some_and(|ext| EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()));
         if !allowed {
