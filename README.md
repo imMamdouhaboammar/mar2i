@@ -87,6 +87,16 @@ bunx tauri build
 TypeScript pure-logic tests live in `src/data.test.ts` and run with `bun test`.  
 Rust integration tests live in `core/tests/` and cover discovery, policy, queue, worker, media inspection, and report generation.
 
+## Optional local MCP access
+
+The `mar2i mcp` command exposes read-only inspection tools over local stdio. By default, its file and directory tools **deny all filesystem requests**. To grant access, explicitly configure `MAR2I_MCP_ALLOWED_ROOTS` with existing absolute directories before launching the MCP process:
+
+```bash
+MAR2I_MCP_ALLOWED_ROOTS="/Volumes/HajjFootage:/Volumes/ArchiveOutput" mar2i mcp
+```
+
+Use the platform path-list separator (`:` on macOS/Linux, `;` on Windows). Both the input and output directories used by the analysis tool must be under authorized roots. Paths are canonicalized before use; access outside the authorized directories, including via symlinks and `..`, is rejected. The grant applies only to the MCP subprocess and does not alter the native app's directory chooser.
+
 ## Security properties
 
 - Input files are never modified; output is written to a separate directory.

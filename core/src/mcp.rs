@@ -8,13 +8,26 @@ use crate::discovery::{discover, validate_directories};
 use crate::fingerprint::compute_fingerprint;
 use crate::hardware::detect_hardware;
 use crate::profiles::standard_profiles;
+use anyhow::{Result, bail};
 use serde_json::{Value, json};
+use std::fs;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
-pub fn run_mcp_server<R: BufRead, W: Write>(mut reader: R, mut writer: W, ffmpeg: &Path) {
+pub fn run_mcp_server<R: BufRead, W: Write>(reader: R, writer: W, ffmpeg: &Path) {
+    run_mcp_server_scoped(reader, writer, ffmpeg, &[]);
+}
+
+/// File-oriented MCP tools require explicit permitted directory roots.
+/// Empty roots intentionally deny all filesystem requests.
+pub fn run_mcp_server_scoped<R: BufRead, W: Write>(
+    mut reader: R,
+    mut writer: W,
+    ffmpeg: &Path,
+    allowed_roots: &[PathBuf],
+) {
     let mut line = String::new();
 
     while let Ok(bytes_read) = reader.read_line(&mut line) {
@@ -25,7 +38,7 @@ pub fn run_mcp_server<R: BufRead, W: Write>(mut reader: R, mut writer: W, ffmpeg
         let trimmed = line.trim();
         if !trimmed.is_empty()
             && let Ok(request) = serde_json::from_str::<Value>(trimmed)
-            && let Some(response) = handle_jsonrpc_message(&request, ffmpeg)
+            && let Some(response) = handle_jsonrpc_message(&request, ffmpeg, allowed_roots)
         {
             let _ = writeln!(writer, "{}", response);
             let _ = writer.flush();
@@ -35,7 +48,7 @@ pub fn run_mcp_server<R: BufRead, W: Write>(mut reader: R, mut writer: W, ffmpeg
     }
 }
 
-fn handle_jsonrpc_message(msg: &Value, ffmpeg: &Path) -> Option<Value> {
+fn handle_jsonrpc_message(msg: &Value, ffmpeg: &Path, allowed_roots: &[PathBuf]) -> Option<Value> {
     let id = msg.get("id").cloned();
     let method = msg.get("method").and_then(Value::as_str)?;
 
@@ -67,7 +80,7 @@ fn handle_jsonrpc_message(msg: &Value, ffmpeg: &Path) -> Option<Value> {
             let tool_name = params.get("name").and_then(Value::as_str)?;
             let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
-            let tool_result = dispatch_tool(tool_name, &arguments, ffmpeg);
+            let tool_result = dispatch_tool(tool_name, &arguments, ffmpeg, allowed_roots);
             Some(json!({
                 "jsonrpc": "2.0",
                 "id": id,
@@ -143,7 +156,24 @@ pub fn get_tool_definitions() -> Value {
     ])
 }
 
-fn dispatch_tool(name: &str, args: &Value, ffmpeg: &Path) -> Value {
+fn authorized_path(path: &Path, roots: &[PathBuf]) -> Result<PathBuf> {
+    if roots.is_empty() {
+        bail!("file access requires an authorized root");
+    }
+    if !path.is_absolute() {
+        bail!("absolute path required");
+    }
+    let canonical = fs::canonicalize(path)?;
+    if !roots.iter().any(|root| {
+        fs::canonicalize(root)
+            .is_ok_and(|allowed| allowed.is_dir() && canonical.starts_with(allowed))
+    }) {
+        bail!("path is outside authorized roots");
+    }
+    Ok(canonical)
+}
+
+fn dispatch_tool(name: &str, args: &Value, ffmpeg: &Path, allowed_roots: &[PathBuf]) -> Value {
     match name {
         "mar2i_detect_hardware" => {
             let report = detect_hardware(ffmpeg);
@@ -177,8 +207,14 @@ fn dispatch_tool(name: &str, args: &Value, ffmpeg: &Path) -> Value {
                 None => return tool_error("output_dir string parameter is required"),
             };
 
-            let in_path = PathBuf::from(input_str);
-            let out_path = PathBuf::from(output_str);
+            let in_path = match authorized_path(Path::new(input_str), allowed_roots) {
+                Ok(path) => path,
+                Err(error) => return tool_error(&format!("Access denied for input_dir: {error}")),
+            };
+            let out_path = match authorized_path(Path::new(output_str), allowed_roots) {
+                Ok(path) => path,
+                Err(error) => return tool_error(&format!("Access denied for output_dir: {error}")),
+            };
 
             match validate_directories(&in_path, &out_path) {
                 Ok(_) => match discover(&in_path) {
@@ -209,8 +245,11 @@ fn dispatch_tool(name: &str, args: &Value, ffmpeg: &Path) -> Value {
                 Some(s) => s,
                 None => return tool_error("file_path string parameter is required"),
             };
-            let p = PathBuf::from(file_str);
-            match compute_fingerprint(&p) {
+            let path = match authorized_path(Path::new(file_str), allowed_roots) {
+                Ok(path) => path,
+                Err(error) => return tool_error(&format!("Access denied: {error}")),
+            };
+            match compute_fingerprint(&path) {
                 Ok(fp) => json!({
                     "content": [
                         {

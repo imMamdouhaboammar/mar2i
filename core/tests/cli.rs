@@ -64,3 +64,48 @@ fn cli_can_compress_real_directory_and_export_reports_without_touching_source() 
     assert!(rerun.status.success());
     assert_eq!(fs::read_dir(&output).unwrap().count(), 2);
 }
+
+#[test]
+fn mcp_cli_grants_only_explicitly_configured_media_roots() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let tmp = tempdir().unwrap();
+    let allowed = tmp.path().join("allowed");
+    fs::create_dir_all(&allowed).unwrap();
+    let video = allowed.join("video.mp4");
+    fs::write(&video, b"synthetic").unwrap();
+    let request = format!(
+        "{}\n",
+        serde_json::json!({
+            "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+            "params": { "name": "mar2i_fingerprint_file", "arguments": { "file_path": video.to_string_lossy() } }
+        })
+    );
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mar2i"))
+        .arg("mcp")
+        .env(
+            "MAR2I_MCP_ALLOWED_ROOTS",
+            std::env::join_paths([&allowed]).unwrap(),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(request.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(response["result"].get("isError").is_none(), "{response}");
+    assert!(
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("size_bytes")
+    );
+}

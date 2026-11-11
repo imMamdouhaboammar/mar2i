@@ -3,7 +3,7 @@ use mar2i_core::discovery::{discover, validate_directories};
 use mar2i_core::estimate::estimate_video_size;
 use mar2i_core::fingerprint::compute_fingerprint;
 use mar2i_core::hardware::detect_hardware;
-use mar2i_core::mcp::run_mcp_server;
+use mar2i_core::mcp::run_mcp_server_scoped;
 use mar2i_core::media::inspect;
 use mar2i_core::policy::{Decision, Mode, choose_plan};
 use mar2i_core::profiles::standard_profiles;
@@ -78,9 +78,18 @@ fn command_line() -> Result<()> {
             .get(2)
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("ffmpeg"));
+        let allowed_roots: Vec<PathBuf> = env::var_os("MAR2I_MCP_ALLOWED_ROOTS")
+            .map(|roots| env::split_paths(&roots).collect())
+            .unwrap_or_default();
+        if allowed_roots
+            .iter()
+            .any(|root| !root.is_absolute() || !root.is_dir())
+        {
+            bail!("MAR2I_MCP_ALLOWED_ROOTS must contain existing absolute directories");
+        }
         let stdin = io::stdin();
         let stdout = io::stdout();
-        run_mcp_server(stdin.lock(), stdout.lock(), &ffmpeg);
+        run_mcp_server_scoped(stdin.lock(), stdout.lock(), &ffmpeg, &allowed_roots);
         return Ok(());
     }
 
