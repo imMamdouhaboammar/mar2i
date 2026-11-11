@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { codecs, escapeHtml, getCodec, recommendedCodec, reportCsv, safeCsvCell, savingsPercent } from './data'
+import { codecs, escapeHtml, getCodec, progressPageWindow, recommendedCodec, reportCsv, safeCsvCell, savingsPercent } from './data'
 
 describe('compression choice copy', () => {
   test('all six choices have distinct explanatory trade-offs', () => {
@@ -34,5 +34,20 @@ describe('report calculations and safety', () => {
 
   test('file names cannot inject HTML markup', () => {
     expect(escapeHtml('<img src="x">')).toBe('&lt;img src=&quot;x&quot;&gt;')
+  })
+})
+
+describe('native progress pagination', () => {
+  test('keeps every job reachable in stable pages of thirty', () => {
+    expect(progressPageWindow(61, 0)).toEqual({ page: 0, pages: 3, start: 0, end: 30 })
+    expect(progressPageWindow(61, 1)).toEqual({ page: 1, pages: 3, start: 30, end: 60 })
+    expect(progressPageWindow(61, 2)).toEqual({ page: 2, pages: 3, start: 60, end: 61 })
+  })
+
+  test('bounds invalid page selections without losing small batches', () => {
+    expect(progressPageWindow(61, -1)).toEqual({ page: 0, pages: 3, start: 0, end: 30 })
+    expect(progressPageWindow(61, 99)).toEqual({ page: 2, pages: 3, start: 60, end: 61 })
+    expect(progressPageWindow(0, 9)).toEqual({ page: 0, pages: 1, start: 0, end: 0 })
+    expect(progressPageWindow(30, 1)).toEqual({ page: 0, pages: 1, start: 0, end: 30 })
   })
 })

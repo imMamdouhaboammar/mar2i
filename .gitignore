@@ -1,30 +1,47 @@
-# Rust targets
+# Rust build artifacts
 target/
 **/target/
+
+# Tauri build output (not the source)
 src-tauri/target/
 core/target/
 
+# Node / Bun
+node_modules/
+bun.lockb
+
+# Frontend build output
+dist/
+dist-ssr/
+*.local
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
+# Editor and OS artifacts
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+Thumbs.db
+
+# Runtime database written by the app into the output folder (never in-repo)
+.mar2i/
+
+# Tauri auto-generated WiX / NSIS temp files
+*.msi
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm

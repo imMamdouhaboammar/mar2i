@@ -52,6 +52,12 @@ export function savingsPercent(before: number, after: number): number {
   return Math.round(((before - after) / before) * 100)
 }
 
+export function progressPageWindow(total: number, requestedPage: number): { page: number; pages: number; start: number; end: number } {
+  const pages = Math.max(1, Math.ceil(total / 30))
+  const page = Math.min(pages - 1, Math.max(0, Math.trunc(requestedPage)))
+  return { page, pages, start: page * 30, end: Math.min(total, (page + 1) * 30) }
+}
+
 export function safeCsvCell(value: string | number): string {
   const raw = String(value)
   const protectedValue = /^[\s]*[=+@\-\t\r]/.test(raw) ? `'${raw}` : raw
