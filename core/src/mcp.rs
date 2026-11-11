@@ -129,7 +129,7 @@ pub fn get_tool_definitions() -> Value {
         },
         {
             "name": "mar2i_list_profiles",
-            "description": "Lists official Ministry of Hajj and Umrah media processing profiles and presets (e.g. Master Archival FFV1, Broadcast HEVC, Field Mobile AV1).",
+            "description": "Lists example media processing profile proposals, not government-approved presets. Only automatic H.264 and limited archival FFV1 processing are currently connected.",
             "inputSchema": {
                 "type": "object",
                 "properties": {}
@@ -137,7 +137,7 @@ pub fn get_tool_definitions() -> Value {
         },
         {
             "name": "mar2i_fingerprint_file",
-            "description": "Computes instantaneous sparse SHA-256 media fingerprint (size + 1MB head + 1MB tail) to verify media integrity and avoid redundant re-compression.",
+            "description": "Computes a sparse SHA-256 similarity hint (size + 1 MiB head + 1 MiB tail). Not a full content-integrity hash or a deduplication guarantee.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

@@ -14,7 +14,9 @@ metadata:
   audience: "Hajj & Umrah media engineers and autonomous AI agents"
 ---
 
-# mar2i-ops: Ministry Video Compression & Archival Operations
+# mar2i-ops: Local Video Compression & Archival Operations
+
+> Development guide only. The app is not an officially approved Ministry product. GPU encoding, AV1/HEVC processing, trimming and visual audit widgets remain disconnected from native batch execution. Sparse fingerprints are similarity hints, not full-file integrity proofs.
 
 > Autonomous operations and programmatic integration manual for `mar2i` (مرئي), the high-assurance bulk video compression and archival workstation engine for the Saudi Ministry of Hajj and Umrah.
 
@@ -24,9 +26,9 @@ metadata:
 
 1. **Original File Immutability**: Source footage files are strictly read-only. `mar2i` never writes into, renames, modifies, or deletes an input file.
 2. **Archival Lossless Isolation**: In `Mode::Archival`, media is encoded exclusively via CPU FFV1 in Matroska (`.mkv`) with frame-by-frame `framemd5` verification. Hardware GPU encoding is strictly prohibited in Archival mode.
-3. **Hardware Acceleration Boundary**: GPU hardware acceleration (`h264_videotoolbox`, `hevc_videotoolbox`, `nvenc`, `qsv`, `amf`) is permitted strictly for `Mode::Publishing` to maximize throughput during media release windows.
-4. **Sleep Prevention Invariant**: Multi-hour video batches must automatically hold a `KeepAwake` RAII assertion (via macOS IOKit `PreventUserIdleSystemSleep` or Win32 `ES_SYSTEM_REQUIRED`), automatically restored upon completion, pause, cancellation, or error.
-5. **Sparse Fingerprint Registry**: Redundant compression of previously processed files is prevented via an $O(1)$ sparse SHA-256 fingerprint: $\text{SHA-256}(\text{size}_{\text{LE}} \parallel \text{head}_{1\text{MB}} \parallel \text{tail}_{1\text{MB}})$.
+3. **Hardware Acceleration Boundary**: Hardware probing exists, but the production runner currently uses CPU H.264 publishing only. GPU encoding must not be reported as active.
+4. **Sleep Prevention**: A best-effort RAII assertion is acquired during a batch; pause currently holds it until the worker exits. The UI has no live assertion confirmation.
+5. **Sparse Fingerprint Registry**: The optional, unconnected registry can offer a quick similarity hint, never proof of full-file identity, via a bounded-read SHA-256 fingerprint: $\text{SHA-256}(\text{size}_{\text{LE}} \parallel \text{head}_{1\text{MB}} \parallel \text{tail}_{1\text{MB}})$.
 
 ---
 
@@ -66,7 +68,7 @@ mar2i fingerprint /Volumes/HajjFootage/4K_Master.mov
 
 ### 2.6 Ministry Media Profiles
 ```bash
-# List official Hajj & Umrah presets
+# List example Hajj & Umrah profiles (not officially approved)
 mar2i profiles
 ```
 
@@ -98,7 +100,7 @@ mar2i mcp
 | :--- | :--- | :--- |
 | `mar2i_analyze_directory` | `input_dir`, `output_dir` | Discovers media, checks stream validity, returns volume |
 | `mar2i_detect_hardware` | *(none)* | Probes and returns host GPU hardware encoders |
-| `mar2i_list_profiles` | *(none)* | Returns official Ministry presets catalog |
+| `mar2i_list_profiles` | *(none)* | Returns proposed profiles, not approved presets |
 | `mar2i_fingerprint_file` | `file_path` | Generates instantaneous sparse SHA-256 hash |
 
 ---
@@ -106,6 +108,6 @@ mar2i mcp
 ## 4. Visual Quality Verification (A/B & SSIM)
 
 During the Review stage (`Screen::Review`), `mar2i` mounts an accessible, RTL-native `CompareSlider`:
-- Compares original source against compressed version side-by-side.
-- Computes structural similarity index ($\text{SSIM} \in [0, 1]$).
-- Rejects lossy outputs failing the $\text{SSIM} \ge 0.95$ threshold for publishing.
+- The current widget compares sample images in the browser demo only, not actual processed media.
+- Displays a sample SSIM number in the demo; production SSIM is computed separately inside the Rust runner.
+- The processing core currently uses a provisional publishing acceptance gate of SSIM >= 0.965; this score is not proof of human-perceived equivalence.

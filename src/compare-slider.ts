@@ -95,7 +95,7 @@ export class CompareSlider {
     const beforeLabel = this.options.beforeLabel ?? 'المصدر الأصلي (ProRes 422 HQ)'
     const afterLabel = this.options.afterLabel ?? 'النسخة المضغوطة (HEVC Main 10)'
     const ssim = activeScene.ssimScore
-    const ssimText = `SSIM: ${ssim.toFixed(3)} · مطابقة بصرية شبه تامة`
+    const ssimText = `SSIM: ${ssim.toFixed(3)} · قيمة توضيحية، وليست نتيجة فحص حقيقي`
 
     this.container.innerHTML = `
       <div class="compare-component-root" dir="rtl">

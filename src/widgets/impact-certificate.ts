@@ -67,7 +67,7 @@ export class ImpactCertificate {
           </div>
           <div>
             <div class="certificate-org">المملكة العربية السعودية · وزارة الحج والعمرة</div>
-            <h2 class="certificate-title">سند الإنجاز والاعتماد الرقمي لمعالجة الدفعة</h2>
+            <h2 class="certificate-title">سند الإنجاز والاعتماد الرقمي لمعالجة الدفعة (نموذج تجريبي غير معتمد)</h2>
             <div class="certificate-date">رقم الدفعة: ${this.report.batchId} · التاريخ: ${this.report.completedDate}</div>
           </div>
         </header>
@@ -105,7 +105,7 @@ export class ImpactCertificate {
             </button>
           </div>
           <code class="root-hash-code">${this.report.rootSha256}</code>
-          <p class="hash-caption">تضمن هذه البصمة المشفرة عدم حدوث أي تلاعب في ملفات الدفعة وتوثق مطابقتها لمعايير الأرشفة الرسمية.</p>
+          <p class="hash-caption">قيمة توضيحية للواجهة فقط، وليست إثباتًا لسلامة الملفات أو اعتمادًا رسميًا. التحقق الفعلي يتطلب بصمة كاملة وبيانًا قابلاً لإعادة الفحص.</p>
         </div>
 
         <!-- Action Buttons -->

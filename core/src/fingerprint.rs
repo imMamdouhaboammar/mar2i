@@ -6,9 +6,9 @@
 //! This module computes an O(1) sparse media fingerprint:
 //! SHA-256( size_le_bytes || first_1MB || last_1MB )
 //!
-//! This provides deterministic collision resistance for media containers (whose headers
-//! and trailers differ substantially) while calculating in <1 millisecond.
-//! It also provides an embedded SQLite registry to prevent duplicate re-compression.
+//! This is a quick similarity hint, not a content-integrity proof: files with
+//! equal size, first MiB and last MiB may differ in the unsampled middle.
+//! The optional SQLite registry is not wired into batch deduplication.
 
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, params};

@@ -3,10 +3,10 @@
 <!-- impeccable:product-schema 1 -->
 
 ## Platform
-web
+Offline desktop application in development (macOS and Windows targets)
 
 ## Stack
-HTML/CSS/TypeScript with Bun and Vite, as an interactive desktop-sized prototype
+Tauri 2, Rust processing core and SQLite jobs, TypeScript/Vite UI with Bun
 
 ## Users
 Employees handling large collections of video footage for the Saudi Ministry of Hajj and Umrah
@@ -23,9 +23,9 @@ Make bulk video compression and archiving easy to configure, monitor, and report
 - Hardware acceleration auto-detection with strict policy separation: GPU for Publishing, mathematically verified CPU for Archival
 - Zero-leak RAII OS Sleep Inhibitor (`KeepAwake`) preventing computer sleep during multi-hour batch runs
 - Stratified multi-sample empirical size estimation predicting accurate GB savings before transcode begins
-- Sparse SHA-256 media fingerprinting (size + 1MB head + 1MB tail) preventing redundant re-compression
-- Native Model Context Protocol (MCP) JSON-RPC 2.0 stdio server enabling automated AI agent orchestration
-- Accessible RTL-native Visual A/B Frame Comparator with real-time SSIM quality index verification
+- Experimental sparse SHA-256 similarity hint (size + 1MiB head + 1MiB tail). Not a complete integrity proof; batch deduplication does not use this registry
+- Experimental, opt-in MCP stdio tool access; authentication and path-grant boundaries are not implemented
+- Accessible RTL A/B comparison prototype using sample imagery; not connected to real native files or measured SSIM yet
 
 ## Evidence on Hand
 Four generated UI reference images from the product discussion, with real implementation requirements still pending for FFmpeg processing
