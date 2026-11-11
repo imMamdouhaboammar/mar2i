@@ -85,17 +85,21 @@ fn parse_profile(profile: &str) -> Result<ResourceProfile, String> {
 }
 
 fn media_binary(name: &str) -> PathBuf {
-    let filename = if cfg!(windows) { format!("{name}.exe") } else { name.to_owned() };
-    if let Ok(executable) = std::env::current_exe() {
-        if let Some(parent) = executable.parent() {
-            for candidate in [
-                parent.join(&filename),
-                parent.join("bin").join(&filename),
-                parent.join("../Resources").join(&filename),
-            ] {
-                if candidate.is_file() {
-                    return candidate;
-                }
+    let filename = if cfg!(windows) {
+        format!("{name}.exe")
+    } else {
+        name.to_owned()
+    };
+    if let Ok(executable) = std::env::current_exe()
+        && let Some(parent) = executable.parent()
+    {
+        for candidate in [
+            parent.join(&filename),
+            parent.join("bin").join(&filename),
+            parent.join("../Resources").join(&filename),
+        ] {
+            if candidate.is_file() {
+                return candidate;
             }
         }
     }
@@ -162,7 +166,9 @@ fn start_batch(
     let mode = parse_mode(&mode)?;
     let profile = parse_profile(&profile)?;
     if codec != "auto" {
-        return Err("الترميز اليدوي غير مفعل بعد في النسخة الحالية. اختر «تلقائي» للمعالجة الفعلية".into());
+        return Err(
+            "الترميز اليدوي غير مفعل بعد في النسخة الحالية. اختر «تلقائي» للمعالجة الفعلية".into(),
+        );
     }
     let input = PathBuf::from(input);
     let output = PathBuf::from(output);
@@ -197,8 +203,13 @@ fn start_batch(
                 )?;
             }
             run_batch(
-                &queue, &media_binary("ffmpeg"), &media_binary("ffprobe"),
-                &output, mode, profile, &control,
+                &queue,
+                &media_binary("ffmpeg"),
+                &media_binary("ffprobe"),
+                &output,
+                mode,
+                profile,
+                &control,
             )?;
             let jobs = queue.list()?;
             std::fs::write(state_dir.join("report.csv"), report_csv(&jobs))?;
@@ -230,18 +241,27 @@ fn batch_status(runtime: State<'_, Arc<Runtime>>) -> Result<StatusResult, String
         Vec::new()
     };
     let summary = summarize(&jobs);
-    let queued = jobs.iter().filter(|job| matches!(job.status.as_str(), "queued" | "interrupted")).count();
-    let active = jobs.iter().filter(|job| matches!(job.status.as_str(), "processing" | "verifying")).count();
-    let views = jobs.into_iter().map(|job| JobView {
-        relative: job.relative,
-        status: job.status,
-        input_bytes: job.input_bytes,
-        output_bytes: job.output_bytes,
-        output: job.output,
-        reason: job.reason,
-        quality: job.quality,
-        elapsed_ms: job.elapsed_ms,
-    }).collect();
+    let queued = jobs
+        .iter()
+        .filter(|job| matches!(job.status.as_str(), "queued" | "interrupted"))
+        .count();
+    let active = jobs
+        .iter()
+        .filter(|job| matches!(job.status.as_str(), "processing" | "verifying"))
+        .count();
+    let views = jobs
+        .into_iter()
+        .map(|job| JobView {
+            relative: job.relative,
+            status: job.status,
+            input_bytes: job.input_bytes,
+            output_bytes: job.output_bytes,
+            output: job.output,
+            reason: job.reason,
+            quality: job.quality,
+            elapsed_ms: job.elapsed_ms,
+        })
+        .collect();
     Ok(StatusResult {
         running: runtime.running.load(Ordering::SeqCst),
         paused: control.as_ref().is_some_and(|value| value.is_paused()),
@@ -262,7 +282,11 @@ fn batch_status(runtime: State<'_, Arc<Runtime>>) -> Result<StatusResult, String
 
 #[tauri::command]
 fn control_batch(action: String, runtime: State<'_, Arc<Runtime>>) -> Result<(), String> {
-    let control = runtime.control.lock().unwrap().clone()
+    let control = runtime
+        .control
+        .lock()
+        .unwrap()
+        .clone()
         .ok_or_else(|| "لا توجد دفعة بدأت معالجتها بعد".to_owned())?;
     match action.as_str() {
         "pause" => control.pause(),
@@ -275,7 +299,11 @@ fn control_batch(action: String, runtime: State<'_, Arc<Runtime>>) -> Result<(),
 
 #[tauri::command]
 fn open_output_directory(runtime: State<'_, Arc<Runtime>>) -> Result<(), String> {
-    let selected = runtime.selection.lock().unwrap().clone()
+    let selected = runtime
+        .selection
+        .lock()
+        .unwrap()
+        .clone()
         .ok_or_else(|| "لم يتم تحديد مجلد النتائج بعد".to_owned())?;
     let folder = std::fs::canonicalize(selected.output).map_err(|error| error.to_string())?;
     #[cfg(target_os = "macos")]
@@ -291,9 +319,110 @@ fn open_output_directory(runtime: State<'_, Arc<Runtime>>) -> Result<(), String>
     }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchSavingsEstimate {
+    original_bytes: u64,
+    estimated_bytes: u64,
+    savings_bytes: i64,
+    savings_percent: i32,
+    files_count: usize,
+}
+
+#[tauri::command]
+fn detect_hardware_encoders() -> Result<mar2i_core::hardware::HardwareReport, String> {
+    let ffmpeg = media_binary("ffmpeg");
+    Ok(mar2i_core::hardware::detect_hardware(&ffmpeg))
+}
+
+#[tauri::command]
+fn get_ministry_profiles() -> Result<Vec<mar2i_core::profiles::MinistryProfile>, String> {
+    Ok(mar2i_core::profiles::standard_profiles())
+}
+
+#[tauri::command]
+fn fingerprint_media(path: String) -> Result<mar2i_core::fingerprint::MediaFingerprint, String> {
+    mar2i_core::fingerprint::compute_fingerprint(Path::new(&path)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn estimate_batch_savings(
+    input: String,
+    mode: String,
+    codec: String,
+    crf: Option<u8>,
+) -> Result<BatchSavingsEstimate, String> {
+    let mode_enum = parse_mode(&mode)?;
+    let input_path = PathBuf::from(input);
+    let discovered = discover(&input_path).map_err(|e| e.to_string())?;
+    let ffprobe = media_binary("ffprobe");
+    let ffmpeg = media_binary("ffmpeg");
+    let crf_val = crf.unwrap_or(22);
+
+    let mut total_original = 0u64;
+    let mut total_estimated = 0u64;
+    let mut files_counted = 0usize;
+
+    for file in &discovered {
+        total_original = total_original.saturating_add(file.size);
+        if let Ok(media) = inspect(&ffprobe, &file.absolute) {
+            match choose_plan(&media.profile, mode_enum) {
+                Decision::Skip { .. } => {
+                    total_estimated = total_estimated.saturating_add(file.size);
+                }
+                Decision::Copy { .. } => {
+                    total_estimated = total_estimated.saturating_add(file.size);
+                    files_counted += 1;
+                }
+                Decision::Encode { .. } => {
+                    let est = mar2i_core::estimate::estimate_video_size(
+                        &ffmpeg,
+                        &file.absolute,
+                        &media,
+                        &codec,
+                        crf_val,
+                        mode_enum,
+                    );
+                    match est {
+                        Ok(res) => {
+                            total_estimated =
+                                total_estimated.saturating_add(res.estimated_output_bytes);
+                            files_counted += 1;
+                        }
+                        Err(_) => {
+                            total_estimated = total_estimated.saturating_add(file.size);
+                        }
+                    }
+                }
+            }
+        } else {
+            total_estimated = total_estimated.saturating_add(file.size);
+        }
+    }
+
+    let savings_bytes = total_original as i64 - total_estimated as i64;
+    let savings_percent = if total_original > 0 {
+        ((savings_bytes as f64 / total_original as f64) * 100.0).round() as i32
+    } else {
+        0
+    };
+
+    Ok(BatchSavingsEstimate {
+        original_bytes: total_original,
+        estimated_bytes: total_estimated,
+        savings_bytes,
+        savings_percent,
+        files_count: files_counted,
+    })
+}
+
 #[tauri::command]
 fn report_content(format: String, runtime: State<'_, Arc<Runtime>>) -> Result<String, String> {
-    let selected = runtime.selection.lock().unwrap().clone()
+    let selected = runtime
+        .selection
+        .lock()
+        .unwrap()
+        .clone()
         .ok_or_else(|| "لم تبدأ أي دفعة بعد".to_owned())?;
     let file = match format.as_str() {
         "csv" => "report.csv",
@@ -315,7 +444,11 @@ pub fn run() {
             batch_status,
             control_batch,
             open_output_directory,
-            report_content
+            report_content,
+            detect_hardware_encoders,
+            get_ministry_profiles,
+            fingerprint_media,
+            estimate_batch_savings
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

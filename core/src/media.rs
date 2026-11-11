@@ -64,7 +64,9 @@ fn rational_rate(value: Option<&str>) -> Option<f64> {
 }
 
 fn rotation(stream: &ProbeStream) -> Option<i32> {
-    if let Some(value) = stream.tags.as_ref()
+    if let Some(value) = stream
+        .tags
+        .as_ref()
         .and_then(|tags| tags.get("rotate"))
         .and_then(Value::as_str)
         .and_then(|raw| raw.parse::<i32>().ok())
@@ -73,38 +75,68 @@ fn rotation(stream: &ProbeStream) -> Option<i32> {
     }
     stream.side_data_list.as_ref()?.iter().find_map(|side| {
         side.get("rotation")
-            .and_then(|value| value.as_i64().or_else(|| value.as_str()?.parse::<i64>().ok()))
+            .and_then(|value| {
+                value
+                    .as_i64()
+                    .or_else(|| value.as_str()?.parse::<i64>().ok())
+            })
             .and_then(|value| i32::try_from(value).ok())
     })
 }
 
 pub fn inspect(ffprobe: &Path, path: &Path) -> Result<InspectedMedia> {
-    let metadata = fs::symlink_metadata(path).with_context(|| format!("cannot stat {}", path.display()))?;
+    let metadata =
+        fs::symlink_metadata(path).with_context(|| format!("cannot stat {}", path.display()))?;
     if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
         bail!("source must be a regular file, not a symbolic link");
     }
 
     let result = Command::new(ffprobe)
-        .args(["-v", "error", "-show_format", "-show_streams", "-show_chapters", "-of", "json"])
+        .args([
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-show_chapters",
+            "-of",
+            "json",
+        ])
         .arg(path)
         .output()
         .with_context(|| format!("cannot launch ffprobe: {}", ffprobe.display()))?;
     if !result.status.success() {
-        bail!("ffprobe failed: {}", String::from_utf8_lossy(&result.stderr).trim());
+        bail!(
+            "ffprobe failed: {}",
+            String::from_utf8_lossy(&result.stderr).trim()
+        );
     }
-    let parsed: ProbeResult = serde_json::from_slice(&result.stdout).context("invalid ffprobe JSON")?;
-    let format = parsed.format.context("ffprobe returned no container information")?;
-    let videos: Vec<&ProbeStream> = parsed.streams.iter()
-        .filter(|stream| stream.codec_type.as_deref() == Some("video")).collect();
+    let parsed: ProbeResult =
+        serde_json::from_slice(&result.stdout).context("invalid ffprobe JSON")?;
+    let format = parsed
+        .format
+        .context("ffprobe returned no container information")?;
+    let videos: Vec<&ProbeStream> = parsed
+        .streams
+        .iter()
+        .filter(|stream| stream.codec_type.as_deref() == Some("video"))
+        .collect();
     let video = videos.first().context("file has no video stream")?;
-    let audios: Vec<&ProbeStream> = parsed.streams.iter()
-        .filter(|stream| stream.codec_type.as_deref() == Some("audio")).collect();
-    let subtitles = parsed.streams.iter()
-        .filter(|stream| stream.codec_type.as_deref() == Some("subtitle")).count();
+    let audios: Vec<&ProbeStream> = parsed
+        .streams
+        .iter()
+        .filter(|stream| stream.codec_type.as_deref() == Some("audio"))
+        .collect();
+    let subtitles = parsed
+        .streams
+        .iter()
+        .filter(|stream| stream.codec_type.as_deref() == Some("subtitle"))
+        .count();
 
     let avg = rational_rate(video.avg_frame_rate.as_deref());
     let nominal = rational_rate(video.r_frame_rate.as_deref());
-    let duration = format.duration.as_deref()
+    let duration = format
+        .duration
+        .as_deref()
         .or(video.duration.as_deref())
         .and_then(|value| value.parse::<f64>().ok())
         .context("video duration is missing or unsupported")?;
@@ -123,12 +155,17 @@ pub fn inspect(ffprobe: &Path, path: &Path) -> Result<InspectedMedia> {
             (Some(a), Some(b)) => (a - b).abs() > 0.01,
             _ => true,
         },
-        video_bitrate: video.bit_rate.as_deref()
+        video_bitrate: video
+            .bit_rate
+            .as_deref()
             .or(format.bit_rate.as_deref())
             .and_then(|rate| rate.parse().ok()),
         pix_fmt: video.pix_fmt.clone().unwrap_or_default(),
         color_transfer: video.color_transfer.clone(),
-        audio_codecs: audios.iter().map(|stream| stream.codec_name.clone().unwrap_or_default()).collect(),
+        audio_codecs: audios
+            .iter()
+            .map(|stream| stream.codec_name.clone().unwrap_or_default())
+            .collect(),
         subtitle_count: subtitles,
         video_count: videos.len(),
     };

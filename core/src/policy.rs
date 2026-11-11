@@ -60,53 +60,90 @@ impl MediaProfile {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
-    Copy { reason: String },
-    Encode { codec: &'static str, container: &'static str, crf: u8 },
-    Skip { reason: String },
+    Copy {
+        reason: String,
+    },
+    Encode {
+        codec: &'static str,
+        container: &'static str,
+        crf: u8,
+    },
+    Skip {
+        reason: String,
+    },
 }
 
 pub fn choose_plan(profile: &MediaProfile, mode: Mode) -> Decision {
     if profile.video_count != 1 || profile.width == 0 || profile.height == 0 {
-        return Decision::Skip { reason: "requires exactly one decodable video stream".into() };
+        return Decision::Skip {
+            reason: "requires exactly one decodable video stream".into(),
+        };
     }
 
     let media_class = profile.classify();
     if media_class == MediaClass::Unsupported {
-        return Decision::Skip { reason: format!("unsupported video codec: {}", profile.codec) };
+        return Decision::Skip {
+            reason: format!("unsupported video codec: {}", profile.codec),
+        };
     }
 
     match mode {
         Mode::Archival => match media_class {
             MediaClass::Uncompressed => {
                 if profile.variable_frame_rate {
-                    return Decision::Copy { reason: "unusual source timing; keeping original for archival fidelity".into() };
+                    return Decision::Copy {
+                        reason: "unusual source timing; keeping original for archival fidelity"
+                            .into(),
+                    };
                 }
-                Decision::Encode { codec: "ffv1", container: "mkv", crf: 0 }
+                Decision::Encode {
+                    codec: "ffv1",
+                    container: "mkv",
+                    crf: 0,
+                }
             }
             _ => Decision::Copy {
-                reason: "preserve existing encoded source without claiming improved fidelity".into(),
+                reason: "preserve existing encoded source without claiming improved fidelity"
+                    .into(),
             },
         },
         Mode::Publishing => {
             if profile.is_hdr() {
-                return Decision::Skip { reason: "HDR needs an approved color-preserving publishing profile".into() };
+                return Decision::Skip {
+                    reason: "HDR needs an approved color-preserving publishing profile".into(),
+                };
             }
             if profile.subtitle_count != 0 {
-                return Decision::Skip { reason: "subtitle streams need an explicitly supported publication container".into() };
+                return Decision::Skip {
+                    reason: "subtitle streams need an explicitly supported publication container"
+                        .into(),
+                };
             }
             if profile.audio_codecs.iter().any(|codec| codec != "aac") {
-                return Decision::Skip { reason: "audio codec needs an explicit preservation or transcode contract".into() };
+                return Decision::Skip {
+                    reason: "audio codec needs an explicit preservation or transcode contract"
+                        .into(),
+                };
             }
             if profile.variable_frame_rate {
-                return Decision::Copy { reason: "variable frame timing retained by copying original".into() };
+                return Decision::Copy {
+                    reason: "variable frame timing retained by copying original".into(),
+                };
             }
             if media_class == MediaClass::Modern {
-                return Decision::Copy { reason: "efficient source: compatibility must be checked before replacing".into() };
+                return Decision::Copy {
+                    reason: "efficient source: compatibility must be checked before replacing"
+                        .into(),
+                };
             }
             if profile.codec == "h264"
-                && profile.bits_per_pixel_per_frame().is_some_and(|bpp| bpp <= 0.14)
+                && profile
+                    .bits_per_pixel_per_frame()
+                    .is_some_and(|bpp| bpp <= 0.14)
             {
-                return Decision::Copy { reason: "already-efficient H.264 source".into() };
+                return Decision::Copy {
+                    reason: "already-efficient H.264 source".into(),
+                };
             }
             let crf = if profile.pix_fmt.contains("10") || profile.pix_fmt.contains("12") {
                 18
@@ -115,7 +152,11 @@ pub fn choose_plan(profile: &MediaProfile, mode: Mode) -> Decision {
             } else {
                 21
             };
-            Decision::Encode { codec: "libx264", container: "mp4", crf }
+            Decision::Encode {
+                codec: "libx264",
+                container: "mp4",
+                crf,
+            }
         }
     }
 }

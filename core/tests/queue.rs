@@ -1,5 +1,5 @@
 use mar2i_core::policy::Mode;
-use mar2i_core::queue::BatchQueue;
+use mar2i_core::queue::{BatchQueue, JobCompletion};
 use std::fs;
 use tempfile::tempdir;
 
@@ -28,7 +28,13 @@ fn interrupted_processing_can_be_reclaimed_after_recovery() {
     let output = tmp.path().join("output");
     fs::create_dir_all(&input).unwrap();
     fs::create_dir_all(&output).unwrap();
-    let queue = BatchQueue::open(&tmp.path().join("recover.sqlite"), &input, &output, Mode::Archival).unwrap();
+    let queue = BatchQueue::open(
+        &tmp.path().join("recover.sqlite"),
+        &input,
+        &output,
+        Mode::Archival,
+    )
+    .unwrap();
     let source = input.join("raw.avi");
     fs::write(&source, b"raw").unwrap();
     queue.enqueue("raw.avi", &source, 3, 123).unwrap();
@@ -54,7 +60,19 @@ fn completed_job_is_never_reclaimed_after_restart_or_rescan() {
     let claimed = queue.claim_next().unwrap().unwrap();
     let out = output.join("done.mp4.mar2i.mp4");
     fs::write(&out, b"smaller").unwrap();
-    queue.finish(claimed.id, "completed", Some(&out), Some(7), Some("SSIM=.99"), None, 100).unwrap();
+    queue
+        .finish(
+            claimed.id,
+            JobCompletion {
+                status: "completed",
+                output: Some(&out),
+                bytes: Some(7),
+                quality: Some("SSIM=.99"),
+                reason: None,
+                elapsed_ms: 100,
+            },
+        )
+        .unwrap();
     let restarted = BatchQueue::open(&db, &input, &output, Mode::Publishing).unwrap();
     restarted.recover().unwrap();
     restarted.enqueue("done.mp4", &source, 8, 555).unwrap();
@@ -72,4 +90,47 @@ fn mismatched_batch_roots_or_mode_cannot_reuse_state() {
     let db = tmp.path().join("state.sqlite");
     BatchQueue::open(&db, &input, &output, Mode::Publishing).unwrap();
     assert!(BatchQueue::open(&db, &input, &output, Mode::Archival).is_err());
+}
+
+#[test]
+fn invalid_completion_cannot_change_a_claimed_job() {
+    let tmp = tempdir().unwrap();
+    let input = tmp.path().join("input");
+    let output = tmp.path().join("output");
+    fs::create_dir_all(&input).unwrap();
+    fs::create_dir_all(&output).unwrap();
+    let source = input.join("source.mp4");
+    fs::write(&source, b"video").unwrap();
+    let queue = BatchQueue::open(
+        &tmp.path().join("batch.sqlite"),
+        &input,
+        &output,
+        Mode::Publishing,
+    )
+    .unwrap();
+    queue.enqueue("source.mp4", &source, 5, 123).unwrap();
+    let job = queue.claim_next().unwrap().unwrap();
+
+    for (status, bytes, elapsed_ms) in [
+        ("queued", None, 100),
+        ("completed", Some(u64::MAX), 100),
+        ("completed", Some(5), u64::MAX),
+    ] {
+        assert!(
+            queue
+                .finish(
+                    job.id,
+                    JobCompletion {
+                        status,
+                        output: None,
+                        bytes,
+                        quality: None,
+                        reason: None,
+                        elapsed_ms,
+                    }
+                )
+                .is_err()
+        );
+        assert_eq!(queue.list().unwrap()[0].status, "processing");
+    }
 }

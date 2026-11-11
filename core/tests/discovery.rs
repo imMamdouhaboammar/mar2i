@@ -10,7 +10,10 @@ fn recursively_discovers_only_supported_video_files_and_keeps_relative_paths() {
     fs::write(dir.path().join("موسم/حج/notes.txt"), b"ignore").unwrap();
     fs::write(dir.path().join("موسم/another.mp4"), b"b").unwrap();
     let files = discover(dir.path()).unwrap();
-    let relative: Vec<_> = files.iter().map(|f| f.relative.to_string_lossy().into_owned()).collect();
+    let relative: Vec<_> = files
+        .iter()
+        .map(|f| f.relative.to_string_lossy().into_owned())
+        .collect();
     assert_eq!(relative, vec!["موسم/another.mp4", "موسم/حج/فيديو 01.MOV"]);
     assert_eq!(files.iter().map(|f| f.size).sum::<u64>(), 2);
 }

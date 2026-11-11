@@ -20,6 +20,17 @@ pub struct Job {
     pub elapsed_ms: Option<u64>,
 }
 
+/// Final state and measured values for one claimed job; validated when persisted.
+#[derive(Debug, Clone)]
+pub struct JobCompletion<'a> {
+    pub status: &'a str,
+    pub output: Option<&'a Path>,
+    pub bytes: Option<u64>,
+    pub quality: Option<&'a str>,
+    pub reason: Option<&'a str>,
+    pub elapsed_ms: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct BatchQueue {
     pub db_path: PathBuf,
@@ -63,10 +74,13 @@ impl BatchQueue {
         if !input.is_dir() || !output.is_dir() {
             bail!("batch directories must exist");
         }
-        let queue = Self { db_path: db.to_path_buf() };
+        let queue = Self {
+            db_path: db.to_path_buf(),
+        };
         let connection = queue.connect()?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
-        connection.execute_batch("
+        connection.execute_batch(
+            "
             CREATE TABLE IF NOT EXISTS batch (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 input_root TEXT NOT NULL,
@@ -90,11 +104,12 @@ impl BatchQueue {
                 elapsed_ms INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status, id);
-        ")?;
+        ",
+        )?;
         let expected = (
             input.to_string_lossy().into_owned(),
             output.to_string_lossy().into_owned(),
-            mode_name(mode).to_owned()
+            mode_name(mode).to_owned(),
         );
         connection.execute(
             "INSERT OR IGNORE INTO batch(id, input_root, output_root, mode) VALUES (1, ?1, ?2, ?3)",
@@ -111,7 +126,13 @@ impl BatchQueue {
         Ok(queue)
     }
 
-    pub fn enqueue(&self, relative: &str, source: &Path, size: u64, modified_ns: i64) -> Result<()> {
+    pub fn enqueue(
+        &self,
+        relative: &str,
+        source: &Path,
+        size: u64,
+        modified_ns: i64,
+    ) -> Result<()> {
         if relative.is_empty() || size > i64::MAX as u64 {
             bail!("invalid source identity");
         }
@@ -120,14 +141,24 @@ impl BatchQueue {
         connection.execute(
             "INSERT OR IGNORE INTO jobs(relative, source, input_bytes, modified_ns, status)
              VALUES(?1, ?2, ?3, ?4, 'queued')",
-            params![relative, absolute.to_string_lossy(), size as i64, modified_ns],
+            params![
+                relative,
+                absolute.to_string_lossy(),
+                size as i64,
+                modified_ns
+            ],
         )?;
         // Never silently reinterpret a changed source as the same completed job.
         connection.execute(
             "UPDATE jobs SET status='failed', reason='source identity changed since discovery'
              WHERE relative=?1 AND (source != ?2 OR input_bytes != ?3 OR modified_ns != ?4)
              AND status NOT IN ('processing','verifying')",
-            params![relative, absolute.to_string_lossy(), size as i64, modified_ns],
+            params![
+                relative,
+                absolute.to_string_lossy(),
+                size as i64,
+                modified_ns
+            ],
         )?;
         Ok(())
     }
@@ -158,19 +189,12 @@ impl BatchQueue {
         }
     }
 
-    pub fn finish(
-        &self,
-        id: i64,
-        status: &str,
-        output: Option<&Path>,
-        bytes: Option<u64>,
-        quality: Option<&str>,
-        reason: Option<&str>,
-        elapsed_ms: u64,
-    ) -> Result<()> {
-        if !matches!(status, "completed" | "skipped" | "failed")
-            || bytes.is_some_and(|value| value > i64::MAX as u64)
-            || elapsed_ms > i64::MAX as u64
+    pub fn finish(&self, id: i64, completion: JobCompletion<'_>) -> Result<()> {
+        if !matches!(completion.status, "completed" | "skipped" | "failed")
+            || completion
+                .bytes
+                .is_some_and(|value| value > i64::MAX as u64)
+            || completion.elapsed_ms > i64::MAX as u64
         {
             bail!("invalid job outcome");
         }
@@ -179,8 +203,17 @@ impl BatchQueue {
             "UPDATE jobs SET status=?2, output=?3, output_bytes=?4,
              quality=?5, reason=?6, elapsed_ms=?7
              WHERE id=?1 AND status IN ('processing','verifying')",
-            params![id, status, output.map(|value| value.to_string_lossy().into_owned()),
-                bytes.map(|value| value as i64), quality, reason, elapsed_ms as i64],
+            params![
+                id,
+                completion.status,
+                completion
+                    .output
+                    .map(|value| value.to_string_lossy().into_owned()),
+                completion.bytes.map(|value| value as i64),
+                completion.quality,
+                completion.reason,
+                completion.elapsed_ms as i64
+            ],
         )?;
         if rows != 1 {
             bail!("job is not active or no longer exists");
@@ -200,8 +233,10 @@ impl BatchQueue {
 
     pub fn list(&self) -> Result<Vec<Job>> {
         let connection = self.connect()?;
-        let mut statement = connection.prepare(&format!("SELECT {JOB_COLUMNS} FROM jobs ORDER BY id"))?;
-        let jobs = statement.query_map([], job_from_row)?
+        let mut statement =
+            connection.prepare(&format!("SELECT {JOB_COLUMNS} FROM jobs ORDER BY id"))?;
+        let jobs = statement
+            .query_map([], job_from_row)?
             .collect::<rusqlite::Result<Vec<Job>>>()?;
         Ok(jobs)
     }

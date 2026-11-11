@@ -3,10 +3,16 @@ use mar2i_core::report::{report_csv, report_html, summarize};
 
 fn item(id: i64, filename: &str, status: &str, before: u64, after: Option<u64>) -> Job {
     Job {
-        id, relative: filename.to_owned(), source: format!("/source/{filename}"),
-        input_bytes: before, modified_ns: 1,
-        status: status.to_owned(), output: after.map(|_| format!("/output/{filename}")),
-        output_bytes: after, reason: None, quality: Some("SSIM=0.99000".into()),
+        id,
+        relative: filename.to_owned(),
+        source: format!("/source/{filename}"),
+        input_bytes: before,
+        modified_ns: 1,
+        status: status.to_owned(),
+        output: after.map(|_| format!("/output/{filename}")),
+        output_bytes: after,
+        reason: None,
+        quality: Some("SSIM=0.99000".into()),
         elapsed_ms: Some(900),
     }
 }
@@ -31,7 +37,13 @@ fn savings_include_only_accepted_smaller_outputs() {
 
 #[test]
 fn csv_export_blocks_formula_injection_and_quotes_fields() {
-    let rows = vec![item(1, "=HYPERLINK(\"bad\",\"run\")", "completed", 100, Some(40))];
+    let rows = vec![item(
+        1,
+        "=HYPERLINK(\"bad\",\"run\")",
+        "completed",
+        100,
+        Some(40),
+    )];
     let csv = report_csv(&rows);
     assert!(csv.starts_with('\u{FEFF}'));
     assert!(csv.contains("'=HYPERLINK("));
@@ -41,7 +53,13 @@ fn csv_export_blocks_formula_injection_and_quotes_fields() {
 
 #[test]
 fn html_report_escapes_filenames() {
-    let rows = vec![item(1, "<script>alert('x')</script>.mov", "completed", 100, Some(40))];
+    let rows = vec![item(
+        1,
+        "<script>alert('x')</script>.mov",
+        "completed",
+        100,
+        Some(40),
+    )];
     let html = report_html(&rows);
     assert!(!html.contains("<script>"));
     assert!(html.contains("&lt;script&gt;"));
