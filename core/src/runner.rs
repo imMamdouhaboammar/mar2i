@@ -256,11 +256,14 @@ fn validated_relative(relative: &Path) -> Result<()> {
     Ok(())
 }
 
-fn copy_hash(path: &Path) -> Result<Vec<u8>> {
+fn copy_hash(path: &Path, control: Option<&Control>) -> Result<Vec<u8>> {
     let mut file = BufReader::new(File::open(path)?);
     let mut digest = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
+        if control.is_some_and(|c| c.is_cancelled()) {
+            bail!("batch cancelled during content fingerprinting");
+        }
         let read = file.read(&mut buffer)?;
         if read == 0 {
             break;
@@ -270,12 +273,24 @@ fn copy_hash(path: &Path) -> Result<Vec<u8>> {
     Ok(digest.finalize().to_vec())
 }
 
-fn source_changed(source: &Path, starting: &fs::Metadata) -> Result<bool> {
+fn source_metadata_changed(source: &Path, starting: &fs::Metadata) -> Result<bool> {
     let current = fs::symlink_metadata(source)?;
     if current.file_type().is_symlink() || !current.file_type().is_file() {
         return Ok(true);
     }
     Ok(current.len() != starting.len() || current.modified()? != starting.modified()?)
+}
+
+fn source_changed(
+    source: &Path,
+    starting: &fs::Metadata,
+    starting_hash: &[u8],
+    control: Option<&Control>,
+) -> Result<bool> {
+    if source_metadata_changed(source, starting)? {
+        return Ok(true);
+    }
+    Ok(copy_hash(source, control)? != starting_hash)
 }
 
 fn make_output_name(relative: &Path, extension: &str, copy: bool) -> Result<PathBuf> {
@@ -477,8 +492,16 @@ pub fn run_one_with_registry(
         bail!("batch cancelled before processing");
     }
     validated_relative(relative)?;
-    let input = inspect(ffprobe, source)?;
     let starting_metadata = fs::symlink_metadata(source)?;
+    if !starting_metadata.file_type().is_file() {
+        bail!("source must be a regular file, not a symlink or special file");
+    }
+    // Hash the entire source before processing: size and mtime can be preserved by an in-place rewrite.
+    let starting_hash = copy_hash(source, control)?;
+    if source_metadata_changed(source, &starting_metadata)? {
+        bail!("source changed while fingerprinting; refusing to process");
+    }
+    let input = inspect(ffprobe, source)?;
     let decision = choose_plan_with_preference(
         &input.profile,
         options.mode,
@@ -539,8 +562,8 @@ pub fn run_one_with_registry(
                 bail!("batch cancelled by user during copy");
             }
             fs::copy(source, temporary)?;
-            if copy_hash(source)? != copy_hash(temporary)? {
-                bail!("copied bytes differ from original");
+            if starting_hash != copy_hash(temporary, control)? {
+                bail!("copied bytes differ from initial source fingerprint");
             }
             format!("byte-for-byte copy: {reason}")
         }
@@ -808,8 +831,11 @@ pub fn run_one_with_registry(
         bail!("batch cancelled by user before publication");
     }
 
-    if source_changed(source, &starting_metadata)? {
+    if source_changed(source, &starting_metadata, &starting_hash, control)? {
         bail!("source changed during processing; discarding temporary output");
+    }
+    if control.is_some_and(|c| c.is_cancelled()) {
+        bail!("batch cancelled before publishing verified output");
     }
     let after = fs::metadata(temporary)?.len();
     if after == 0 {
@@ -882,5 +908,48 @@ mod publication_tests {
             !temporary_path.exists(),
             "published temporary file must be removed"
         );
+    }
+}
+
+#[cfg(test)]
+mod source_change_tests {
+    use super::{copy_hash, source_changed};
+    use crate::worker::Control;
+    use std::fs::{self, File};
+    use tempfile::tempdir;
+
+    #[test]
+    fn detects_same_size_rewrite_even_when_modified_timestamp_is_restored() {
+        let directory = tempdir().unwrap();
+        let source = directory.path().join("source.mp4");
+        fs::write(&source, b"original media bytes").unwrap();
+        let original = fs::symlink_metadata(&source).unwrap();
+        let original_hash = copy_hash(&source, None).unwrap();
+        let original_modified = original.modified().unwrap();
+
+        fs::write(&source, b"different media data").unwrap();
+        File::options()
+            .write(true)
+            .open(&source)
+            .unwrap()
+            .set_modified(original_modified)
+            .unwrap();
+        let current = fs::symlink_metadata(&source).unwrap();
+        assert_eq!(original.len(), current.len());
+        assert_eq!(original_modified, current.modified().unwrap());
+
+        assert!(source_changed(&source, &original, &original_hash, None).unwrap());
+    }
+
+    #[test]
+    fn cancelled_batch_does_not_continue_full_content_hashing() {
+        let directory = tempdir().unwrap();
+        let source = directory.path().join("source.mp4");
+        fs::write(&source, b"media data").unwrap();
+        let control = Control::default();
+        control.cancel();
+
+        let error = copy_hash(&source, Some(&control)).unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
     }
 }
