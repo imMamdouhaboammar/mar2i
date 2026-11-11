@@ -1,13 +1,12 @@
 //! Stratified Multi-Sample Bitrate & Size Prediction Engine.
 //!
-//! Provides honest, empirical compression size forecasts for Ministry of Hajj & Umrah media batches.
-//! Rather than speculative guessing, it samples short slices across the media timeline,
-//! transcodes them at the selected profile/CRF, measures empirical byte yield, and projects
-//! accurate storage savings with explicit confidence bounds.
+//! Experimental size forecasts from short encoded video samples.
+//! Forecasts are approximate, exclude audio and other streams, and are not
+//! quality equivalence or guaranteed savings. Failed sampling returns an error.
 
 use crate::media::InspectedMedia;
 use crate::policy::Mode;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -35,16 +34,15 @@ pub fn estimate_video_size(
     mode: Mode,
 ) -> Result<SizeEstimate> {
     let original_bytes = media.input_bytes;
-    
-    // In Archival mode, FFV1 lossless preserves raw frames without loss.
-    // If source is already compressed/lossless, estimated size is original size.
+
+    // Only source-preserving archival copies have a known size before processing.
+    // Predicting FFV1 savings from a universal percentage is not evidence.
     if mode == Mode::Archival {
         let est = match media.profile.classify() {
             crate::policy::MediaClass::Uncompressed => {
-                // FFV1 lossless typically achieves ~40-50% compression on uncompressed video
-                (original_bytes as f64 * 0.55) as u64
+                bail!("archival FFV1 size forecast unavailable without measured encoding samples")
             }
-            _ => original_bytes, // Pass-through copy
+            _ => original_bytes,
         };
         let savings = original_bytes as i64 - est as i64;
         let pct = if original_bytes > 0 {
@@ -63,30 +61,28 @@ pub fn estimate_video_size(
         });
     }
 
-    // Attempt empirical stratified sampling using FFmpeg if duration is known
+    // A missing encoder or failed sampling run must not become a made-up forecast.
     let total_duration = get_media_duration_seconds(media);
-    if total_duration > 0.0 && ffmpeg.is_file() {
-        if let Ok(sample_est) = run_stratified_samples(ffmpeg, source, total_duration, target_codec, crf) {
-            let savings = original_bytes as i64 - sample_est as i64;
-            let pct = if original_bytes > 0 {
-                ((savings as f64 / original_bytes as f64) * 100.0).round() as i32
-            } else {
-                0
-            };
-            return Ok(SizeEstimate {
-                original_bytes,
-                estimated_output_bytes: sample_est,
-                projected_savings_bytes: savings,
-                projected_savings_percent: pct,
-                sample_count: 3,
-                confidence_level: "empirical_sampled".into(),
-                estimated_duration_sec: total_duration,
-            });
-        }
+    if total_duration <= 0.0 || !ffmpeg.is_file() {
+        bail!("empirical size estimate unavailable: video duration or FFmpeg missing")
     }
-
-    // Analytical fallback based on empirical CRF scaling curves
-    analytical_estimate(media, target_codec, crf)
+    let (sample_est, sample_count) =
+        run_stratified_samples(ffmpeg, source, total_duration, target_codec, crf)?;
+    let savings = original_bytes as i64 - sample_est as i64;
+    let pct = if original_bytes > 0 {
+        ((savings as f64 / original_bytes as f64) * 100.0).round() as i32
+    } else {
+        0
+    };
+    Ok(SizeEstimate {
+        original_bytes,
+        estimated_output_bytes: sample_est,
+        projected_savings_bytes: savings,
+        projected_savings_percent: pct,
+        sample_count,
+        confidence_level: "empirical_sampled".into(),
+        estimated_duration_sec: total_duration,
+    })
 }
 
 fn get_media_duration_seconds(media: &InspectedMedia) -> f64 {
@@ -98,7 +94,7 @@ fn get_media_duration_seconds(media: &InspectedMedia) -> f64 {
             return (media.input_bytes * 8) as f64 / bitrate as f64;
         }
     }
-    30.0 // Default 30s benchmark assumption if metadata is missing
+    0.0 // Unknown duration must remain unknown
 }
 
 fn run_stratified_samples(
@@ -107,7 +103,7 @@ fn run_stratified_samples(
     total_duration: f64,
     codec: &str,
     crf: u8,
-) -> Result<u64> {
+) -> Result<(u64, usize)> {
     let sample_points = if total_duration <= 10.0 {
         vec![0.0]
     } else {
@@ -121,6 +117,7 @@ fn run_stratified_samples(
     let sample_duration = 1.0f64;
     let mut total_sample_bytes = 0u64;
     let mut total_sample_sec = 0.0f64;
+    let mut successful_samples = 0usize;
 
     let encoder = match codec {
         "h264" => "libx264",
@@ -165,6 +162,7 @@ fn run_stratified_samples(
                 if let Ok(meta) = fs::metadata(&sample_out) {
                     total_sample_bytes += meta.len();
                     total_sample_sec += sample_duration;
+                    successful_samples += 1;
                 }
             }
         }
@@ -173,7 +171,7 @@ fn run_stratified_samples(
     if total_sample_sec > 0.0 {
         let byte_rate_per_sec = total_sample_bytes as f64 / total_sample_sec;
         let projected = (byte_rate_per_sec * total_duration) as u64;
-        return Ok(projected);
+        return Ok((projected, successful_samples));
     }
 
     bail!("sampling yielded zero bytes")
@@ -181,12 +179,12 @@ fn run_stratified_samples(
 
 pub fn analytical_estimate(media: &InspectedMedia, codec: &str, crf: u8) -> Result<SizeEstimate> {
     let original_bytes = media.input_bytes;
-    
+
     // Normalized CRF factor: CRF 23 is standard reference (1.0)
     // Each 6 steps in CRF roughly halves or doubles bitrate (exponential scale)
     let crf_ratio = 2.0f64.powf((23.0 - crf as f64) / 6.0);
 
-    // Codec efficiency relative to standard H.264
+    // Demonstration-only assumptions; never call this from production forecasts
     let codec_efficiency = match codec {
         "av1" => 0.50,  // AV1 is ~50% more efficient than H.264 at same visual fidelity
         "hevc" => 0.65, // HEVC is ~35% more efficient than H.264
@@ -195,7 +193,8 @@ pub fn analytical_estimate(media: &InspectedMedia, codec: &str, crf: u8) -> Resu
         _ => 1.00,
     };
 
-    let estimated = ((original_bytes as f64) * codec_efficiency * crf_ratio).min(original_bytes as f64 * 1.5) as u64;
+    let estimated = ((original_bytes as f64) * codec_efficiency * crf_ratio)
+        .min(original_bytes as f64 * 1.5) as u64;
     let savings = original_bytes as i64 - estimated as i64;
     let pct = if original_bytes > 0 {
         ((savings as f64 / original_bytes as f64) * 100.0).round() as i32
