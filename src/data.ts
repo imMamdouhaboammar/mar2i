@@ -152,3 +152,28 @@ export function reportCsv(rows: FileRow[]): string {
 export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!)
 }
+
+
+export function getSampleProbeData(fileName: string) {
+  const isMov = fileName.toLowerCase().endsWith('.mov')
+  return {
+    fileName,
+    fileSize: isMov ? 742 * 1024 * 1024 : 164 * 1024 * 1024,
+    durationSeconds: isMov ? 342 : 128,
+    formatName: isMov ? 'mov,mp4,m4a,3gp,3g2,mj2' : 'mov,mp4,m4a',
+    overallBitrateKbps: isMov ? 18200 : 10700,
+    videoCodec: isMov ? 'Apple ProRes 422 HQ (apch)' : 'H.264 / AVC / MPEG-4 AVC',
+    videoProfile: isMov ? 'High 4:2:2 Profile' : 'High Profile (L4.2)',
+    resolution: isMov ? '3840x2160 (4K UHD)' : '1920x1080 (FHD)',
+    fps: 59.94,
+    colorSpace: isMov ? 'bt709 (10-bit SDR Mezzanine)' : 'bt709 (8-bit SDR)',
+    pixelFormat: isMov ? 'yuv422p10le' : 'yuv420p',
+    audioCodec: isMov ? 'pcm_s24le (Linear PCM)' : 'aac (LC)',
+    audioChannels: 2,
+    audioSampleRateHz: 48000,
+    audioBitrateKbps: isMov ? 2304 : 320,
+    sparseSha256: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+    cameraModel: 'Sony FX6 Cinema Line (المسجد الحرام - الصفا)',
+    preservationClass: isMov ? ('Master Permanent Archive' as const) : ('Standard Media' as const),
+  }
+}

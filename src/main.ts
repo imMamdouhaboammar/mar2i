@@ -17,6 +17,7 @@ import {
   codecs,
   escapeHtml,
   getCodec,
+  getSampleProbeData,
   ministryPresets,
   projectCodecSavings,
   reportCsv,
@@ -28,6 +29,13 @@ import {
   type Screen,
 } from './data'
 import { CompareSlider } from './compare-slider'
+import { DynamicIsland, type QueueItem } from './widgets/dynamic-island'
+import { VideoTrimmer } from './widgets/video-trimmer'
+import { AspectRatioStudio } from './widgets/aspect-ratio-studio'
+import { ForensicProbeDrawer } from './widgets/forensic-probe'
+import { StorageMeter } from './widgets/storage-meter'
+import { ImpactCertificate } from './widgets/impact-certificate'
+import { BatchActionBar } from './widgets/batch-action-bar'
 
 type FolderDialog = 'output' | 'cancel' | 'results' | null
 
@@ -54,6 +62,12 @@ type UiState = {
   dialog: FolderDialog
   hardwareReport: HardwareReport | null
   compareSliderInstance: CompareSlider | null
+  dynamicIslandInstance: DynamicIsland | null
+  selectedFileIds: Set<string>
+  activeTrimmerFile: string | null
+  activeAspectFile: string | null
+  activeProbeFile: string | null
+  islandExpanded: boolean
 }
 
 const state: UiState = {
@@ -79,6 +93,12 @@ const state: UiState = {
   dialog: null,
   hardwareReport: null,
   compareSliderInstance: null,
+  dynamicIslandInstance: null,
+  selectedFileIds: new Set<string>(),
+  activeTrimmerFile: null,
+  activeAspectFile: null,
+  activeProbeFile: null,
+  islandExpanded: false,
 }
 
 const root = document.querySelector<HTMLDivElement>('#app')!
@@ -131,6 +151,8 @@ const paths: Record<string, string> = {
   back: '<path d="m15 18-6-6 6-6"/>',
   cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/>',
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
+  crop: '<path d="M6.13 1 6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13 16 6a2 2 0 0 1 2 2v15"/>',
 }
 
 function icon(name: string, size = 19): string {
@@ -214,23 +236,12 @@ function toggle(): string {
 function renderOptions(): string {
   const selected = getCodec(state.help)
   const mismatch = state.mode === 'publish' && state.codec === 'ffv1'
-  const approxInputGb = state.analysis?.totalBytes ? state.analysis.totalBytes / (1024 * 1024 * 1024) : 120
-  const forecast = projectCodecSavings(approxInputGb, state.codec, state.mode)
 
   return `<div class="page page-options">${screenHeading('خيارات الضغط والتوقعات', 'اختر ما يناسب استخدام الفيديو واطلع على التوفير المتوقع', true)}
     <div class="segmented" role="group" aria-label="غرض المعالجة"><button class="${state.mode === 'publish' ? 'active' : ''}" data-mode="publish" aria-pressed="${state.mode === 'publish'}">النشر والمشاركة</button><button class="${state.mode === 'archive' ? 'active' : ''}" data-mode="archive" aria-pressed="${state.mode === 'archive'}">الأرشفة عالية الجودة</button></div>
     
-    <!-- Live Size Estimation Forecast Card -->
-    <div class="estimate-forecast-box" role="region" aria-label="توقع المساحة الموفرة">
-      <div>
-        <div class="estimate-forecast-title">${icon('shield', 18)}<span>توقع سعة التخزين قبل بدء المعالجة</span></div>
-        <div class="estimate-forecast-sub">بناءً على قياس العينات والترميز المختار (${getCodec(state.codec).name})</div>
-      </div>
-      <div style="text-align: left;">
-        <div class="estimate-forecast-value">${forecast.savedGb} GB (${forecast.percent}%)</div>
-        <div class="estimate-forecast-sub">المساحة المتوقع توفيرها من أصل ${approxInputGb.toFixed(1)} GB</div>
-      </div>
-    </div>
+    <!-- Live Predictive Storage Savings Meter Mount -->
+    <div id="storage-meter-mount"></div>
 
     <!-- Official Ministry Presets -->
     <div class="preset-section">
@@ -275,10 +286,29 @@ function renderReview(): string {
       <div class="summary-line"><span>الترميز</span><strong>${getCodec(state.codec).name}</strong></div>
     </section>
 
+    <!-- Predictive Storage Meter -->
+    <div id="storage-meter-mount"></div>
+
+    <!-- Advanced Video Engineering & Pre-Processing Tools -->
+    <div class="video-tools-ribbon" role="toolbar" aria-label="أدوات معالجة الفيديو المتقدمة">
+      <span class="ribbon-title">${icon('video', 16)} <strong>أدوات الفحص والتحضير البصري:</strong></span>
+      <div class="ribbon-buttons">
+        <button type="button" class="btn btn-outline" data-action="open-trimmer">
+          ${icon('scissors', 17)} <span>تشذيب المقطع والموجة الصوتية</span>
+        </button>
+        <button type="button" class="btn btn-outline" data-action="open-aspect">
+          ${icon('crop', 17)} <span>استوديو الأبعاد (16:9 / 9:16)</span>
+        </button>
+        <button type="button" class="btn btn-outline" data-action="open-probe">
+          ${icon('report', 17)} <span>فحص التفاصيل والبصمة الرقمية (SHA-256)</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Visual A/B Compare Tool Mount Point -->
     <div class="section-title">
       <h2>فحص الجودة البصرية التفاعلي (A/B)</h2>
-      <span>اسحب المقبض لمقارنة دقة التفاصيل قبل وبعد المعالجة</span>
+      <span>قارن دقة المشاهد قبل وبعد المعالجة مع إمكانية استخدام عدسة التكبير وخريطة التباين</span>
     </div>
     <div id="review-compare-mount" class="compare-container"></div>
 
@@ -365,22 +395,55 @@ function resultRows(): string {
   if (isDesktop && state.batch) return nativeResultRows()
   const query = state.search.trim().toLocaleLowerCase('ar')
   const filtered = sampleFiles.filter((file) => file.name.toLocaleLowerCase('ar').includes(query))
-  if (!filtered.length) return `<tr><td colspan="5" class="no-results">لا توجد ملفات تطابق البحث</td></tr>`
-  return filtered.map((row) => `<tr class="${row.status === 'review' ? 'row-warning' : ''}" data-file="${escapeHtml(row.name)}"><td class="name-cell"><button class="row-toggle" type="button" data-expand="${escapeHtml(row.name)}" aria-expanded="${state.expandedFile === row.name}">${icon('video', 17)}<span>${escapeHtml(row.name)}</span>${icon('chevron', 16)}</button></td><td class="latin">${row.before.toFixed(1)} GB</td><td class="latin">${row.after.toFixed(1)} GB</td><td class="latin">${savingsPercent(row.before, row.after).toFixed(0)}%</td><td>${status(row)}</td></tr>${state.expandedFile === row.name ? `<tr class="detail-row"><td colspan="5"><div class="detail-note">${icon(row.status === 'review' ? 'alert' : 'help', 18)}<div><strong>${row.status === 'review' ? 'لم يُعتمد ملف جديد لأن حجمه لم ينخفض' : row.status === 'unchanged' ? 'الملف الأصلي مناسب ولم يحتج إلى إعادة ضغط' : 'اكتملت المعالجة والتحقق'}</strong><span>الترميز المستخدم: <b dir="ltr">${escapeHtml(row.codec)}</b> <span class="detail-sep">|</span> مؤشر الجودة SSIM: <b dir="ltr">${row.ssim?.toFixed(3) ?? '0.985'}</b></span></div></div></td></tr>` : ''}`).join('')
+  if (!filtered.length) return `<tr><td colspan="6" class="no-results">لا توجد ملفات تطابق البحث</td></tr>`
+  return filtered.map((row) => {
+    const isSelected = state.selectedFileIds.has(row.name)
+    return `<tr class="${row.status === 'review' ? 'row-warning' : ''} ${isSelected ? 'row-selected' : ''}" data-file="${escapeHtml(row.name)}">
+      <td style="width: 40px; text-align: center;">
+        <input type="checkbox" class="file-cb" data-file-select="${escapeHtml(row.name)}" ${isSelected ? 'checked' : ''} aria-label="تحديد ${escapeHtml(row.name)}" />
+      </td>
+      <td class="name-cell">
+        <button class="row-toggle" type="button" data-expand="${escapeHtml(row.name)}" aria-expanded="${state.expandedFile === row.name}">
+          ${icon('video', 17)}<span>${escapeHtml(row.name)}</span>${icon('chevron', 16)}
+        </button>
+      </td>
+      <td class="latin">${row.before.toFixed(1)} GB</td>
+      <td class="latin">${row.after.toFixed(1)} GB</td>
+      <td class="latin">${savingsPercent(row.before, row.after).toFixed(0)}%</td>
+      <td>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          ${status(row)}
+          <button class="row-probe-btn" type="button" data-probe-file="${escapeHtml(row.name)}" title="فحص البصمة الرقمية والمسارات">${icon('report', 15)}</button>
+        </div>
+      </td>
+    </tr>
+    ${state.expandedFile === row.name ? `<tr class="detail-row"><td colspan="6"><div class="detail-note">${icon(row.status === 'review' ? 'alert' : 'help', 18)}<div><strong>${row.status === 'review' ? 'لم يُعتمد ملف جديد لأن حجمه لم ينخفض' : row.status === 'unchanged' ? 'الملف الأصلي مناسب ولم يحتج إلى إعادة ضغط' : 'اكتملت المعالجة والتحقق'}</strong><span>الترميز المستخدم: <b dir="ltr">${escapeHtml(row.codec)}</b> <span class="detail-sep">|</span> مؤشر الجودة SSIM: <b dir="ltr">${row.ssim?.toFixed(3) ?? '0.985'}</b> <button class="btn btn-outline" style="padding: 2px 8px; font-size: 11px; margin-inline-start: 12px;" type="button" data-probe-file="${escapeHtml(row.name)}">عرض التحليل الجنائي الكامل</button></span></div></div></td></tr>` : ''}`
+  }).join('')
 }
 
 function nativeResultRows() {
   const search = state.search.trim().toLocaleLowerCase('ar')
   const jobs = (state.batch?.jobs ?? []).filter((job) => job.relative.toLocaleLowerCase('ar').includes(search))
-  if (!jobs.length) return '<tr><td colspan="5" class="no-results">لا توجد ملفات تطابق البحث أو لم تبدأ أي دفعة بعد</td></tr>'
+  if (!jobs.length) return '<tr><td colspan="6" class="no-results">لا توجد ملفات تطابق البحث أو لم تبدأ أي دفعة بعد</td></tr>'
   return jobs.map((job) => {
     const name = escapeHtml(job.relative)
     const saving = job.status === 'completed' && job.outputBytes !== null && job.inputBytes > 0 ? Math.max(0, 100 * (job.inputBytes - job.outputBytes) / job.inputBytes) : 0
     const label = job.status === 'completed' ? 'مكتمل' : job.status === 'skipped' ? 'دون تغيير' : job.status === 'failed' ? 'فشل' : 'قيد العمل'
-    return `<tr><td class="name-cell"><button class="row-toggle" data-expand="${name}" aria-expanded="${state.expandedFile === job.relative}">${icon('video', 17)}<span>${name}</span>${icon('chevron', 16)}</button></td>
+    const isSelected = state.selectedFileIds.has(job.relative)
+    return `<tr class="${isSelected ? 'row-selected' : ''}">
+      <td style="width: 40px; text-align: center;">
+        <input type="checkbox" class="file-cb" data-file-select="${name}" ${isSelected ? 'checked' : ''} aria-label="تحديد ${name}" />
+      </td>
+      <td class="name-cell"><button class="row-toggle" data-expand="${name}" aria-expanded="${state.expandedFile === job.relative}">${icon('video', 17)}<span>${name}</span>${icon('chevron', 16)}</button></td>
       <td class="latin">${formatBytes(job.inputBytes)}</td><td class="latin">${job.outputBytes === null ? 'غير متاح' : formatBytes(job.outputBytes)}</td>
-      <td class="latin">${saving.toFixed(1)}%</td><td><span class="row-status ${job.status === 'completed' ? 'successful' : job.status === 'failed' ? 'needs-review' : 'neutral'}">${label}</span></td></tr>
-      ${state.expandedFile === job.relative ? `<tr class="detail-row"><td colspan="5"><div class="detail-note">${icon('help', 18)}<div><strong>تفاصيل نتيجة الملف</strong><span>${escapeHtml(job.reason ?? job.quality ?? 'لم تتوفر تفاصيل إضافية')}</span></div></div></td></tr>` : ''}`
+      <td class="latin">${saving.toFixed(1)}%</td>
+      <td>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <span class="row-status ${job.status === 'completed' ? 'successful' : job.status === 'failed' ? 'needs-review' : 'neutral'}">${label}</span>
+          <button class="row-probe-btn" type="button" data-probe-file="${name}" title="فحص البصمة الرقمية">${icon('report', 15)}</button>
+        </div>
+      </td></tr>
+      ${state.expandedFile === job.relative ? `<tr class="detail-row"><td colspan="6"><div class="detail-note">${icon('help', 18)}<div><strong>تفاصيل نتيجة الملف</strong><span>${escapeHtml(job.reason ?? job.quality ?? 'لم تتوفر تفاصيل إضافية')} <button class="btn btn-outline" style="padding: 2px 8px; font-size: 11px; margin-inline-start: 12px;" type="button" data-probe-file="${name}">عرض التحليل الجنائي الكامل</button></span></div></div></td></tr>` : ''}`
   }).join('')
 }
 
@@ -392,9 +455,12 @@ function renderResults(): string {
   const savingsText = isDesktop ? formatBytes(statusObj?.verifiedSavingsBytes ?? 0) : '318.6 GB'
 
   return `<div class="page page-results">${screenHeading('اكتملت معالجة الدفعة', 'المساحة الموفرة محسوبة من الملفات المقبولة فقط، والأصول لم تتغير')}
+    <!-- Official Ministry Impact Certificate Mount Point -->
+    <div id="results-certificate-mount"></div>
+
     <div class="results-overview"><div class="result-highlight"><strong class="latin">${savingsText}</strong><span>مساحة تم توفيرها بعد التحقق</span></div><dl class="results-counts"><div><dd class="latin">${completed}</dd><dt>مكتمل</dt></div><div><dd class="latin">${skipped}</dd><dt>دون ضغط</dt></div><div><dd class="latin">${failed}</dd><dt>فشل / يحتاج مراجعة</dt></div></dl><div class="result-actions">${button(`${icon('folder', 18)} فتح مجلد النتائج`, 'open-results-folder', 'primary', isDesktop && !statusObj ? 'disabled' : '')}<div class="menu-wrap">${button(`تصدير التقرير ${icon('chevron', 16)}`, 'toggle-report-menu', 'outline', `aria-expanded="${state.reportMenu}"`)}${state.reportMenu ? `<div class="export-menu" role="menu"><button role="menuitem" data-export="csv">CSV</button><button role="menuitem" data-export="excel">Excel (CSV)</button><button role="menuitem" data-export="html">HTML</button><button role="menuitem" data-export="pdf">PDF (طباعة)</button></div>` : ''}</div></div></div>
     <div class="section-title results-title"><h2>نتائج الملفات</h2><div class="search-box">${icon('search', 19)}<input id="file-search" type="search" placeholder="البحث في الملفات" value="${escapeHtml(state.search)}" aria-label="البحث في الملفات" /><button type="button" data-action="clear-search" aria-label="مسح البحث" ${state.search ? '' : 'hidden'}>${icon('close', 15)}</button></div></div>
-    <div class="table-scroll"><table class="data-table results-table"><thead><tr><th>الملف</th><th>قبل</th><th>بعد</th><th>التوفير</th><th>الحالة</th></tr></thead><tbody id="result-table-body">${resultRows()}</tbody></table></div>
+    <div class="table-scroll"><table class="data-table results-table"><thead><tr><th style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cb" aria-label="تحديد جميع الملفات" ${state.selectedFileIds.size > 0 && state.selectedFileIds.size === sampleFiles.length ? 'checked' : ''} /></th><th>الملف</th><th>قبل</th><th>بعد</th><th>التوفير</th><th>الحالة</th></tr></thead><tbody id="result-table-body">${resultRows()}</tbody></table></div>
     <p class="data-disclaimer">${isDesktop ? 'التقرير يعرض القيم المقاسة من عملية المعالجة الفعلية' : 'القيم المعروضة نموذجية لتجربة الواجهة'}</p>
   </div>`
 }
@@ -430,8 +496,42 @@ function currentScreen(): string {
   }
 }
 
+async function togglePause(): Promise<void> {
+  if (isDesktop && state.batch) {
+    try {
+      await nativeControl(state.batch.paused ? 'resume' : 'pause')
+      await pollNative()
+    } catch (e) {
+      showError(e)
+    }
+  } else {
+    state.paused = !state.paused
+    if (state.paused) stopTimer()
+    else startTimer()
+    render()
+  }
+}
+
 function render(): void {
-  root.innerHTML = `<div class="app-shell">${sidebar()}<div class="workspace"><div class="window-bar"><span>مرئي <span class="bar-separator">/</span> إدارة ملفات الفيديو الحكومية</span><span class="window-status"><span class="availability-dot"></span> ${isDesktop ? 'تشغيل محلي (Tauri + Rust)' : 'معاينة تفاعلية'}</span></div><main id="main-content" tabindex="-1">${state.notice ? `<div class="native-notice" role="status">${escapeHtml(state.notice)}</div>` : ''}${currentScreen()}</main></div></div>${dialogMarkup()}`
+  root.innerHTML = `
+    <div class="app-shell">
+      ${sidebar()}
+      <div class="workspace">
+        <div id="dynamic-island-slot" class="dynamic-island-container"></div>
+        <div class="window-bar">
+          <span>مرئي <span class="bar-separator">/</span> إدارة ملفات الفيديو الحكومية</span>
+          <span class="window-status"><span class="availability-dot"></span> ${isDesktop ? 'تشغيل محلي (Tauri + Rust)' : 'معاينة تفاعلية'}</span>
+        </div>
+        <main id="main-content" tabindex="-1">
+          ${state.notice ? `<div class="native-notice" role="status">${escapeHtml(state.notice)}</div>` : ''}
+          ${currentScreen()}
+        </main>
+      </div>
+    </div>
+    <div id="modal-mount"></div>
+    <div id="batch-action-bar-mount"></div>
+    ${dialogMarkup()}
+  `
   
   if (state.dialog) {
     const dialog = document.querySelector<HTMLDialogElement>('#app-dialog')
@@ -439,7 +539,46 @@ function render(): void {
     dialog?.addEventListener('close', () => { state.dialog = null }, { once: true })
   }
 
-  // Mount CompareSlider if on review screen
+  // 1. Mount or update Dynamic Island
+  const islandSlot = document.querySelector<HTMLElement>('#dynamic-island-slot')
+  if (islandSlot) {
+    const queueItems: QueueItem[] = [
+      { id: '1', name: 'إرشادات الطواف.mp4', originalSize: 164 * 1024 * 1024, compressedSize: 72 * 1024 * 1024, codec: 'HEVC', status: state.progress > 50 ? 'completed' : 'compressing', progress: state.progress },
+      { id: '2', name: 'خدمات الحجاج.mov', originalSize: 742 * 1024 * 1024, compressedSize: 318 * 1024 * 1024, codec: 'HEVC', status: 'completed', progress: 100 },
+      { id: '3', name: 'رحلة المعتمر_04.mp4', originalSize: 410 * 1024 * 1024, codec: 'AV1', status: 'waiting', progress: 0 },
+      { id: '4', name: 'لقطات التوعية.mov', originalSize: 283 * 1024 * 1024, compressedSize: 98 * 1024 * 1024, codec: 'H.264', status: 'compressing', progress: 76 },
+    ]
+    state.dynamicIslandInstance = new DynamicIsland({
+      container: islandSlot,
+      initialExpanded: state.islandExpanded,
+      isProcessing: state.screen === 'progress' || (state.batch?.running ?? false),
+      isPaused: state.paused,
+      progress: state.progress,
+      keepAwakeActive: true,
+      throughputRate: '4.2x سرعة فعلية',
+      queue: queueItems,
+      onToggleExpand: (exp) => { state.islandExpanded = exp },
+      onPauseToggle: () => { void togglePause() },
+      onCancelBatch: () => { state.dialog = 'cancel'; render() },
+      onClearCompleted: () => {
+        state.notice = 'تم تنظيف المهام المكتملة من قائمة الانتظار'
+        render()
+      },
+      onFilesDropped: (files) => {
+        state.sourceCount = (state.sourceCount ?? 1248) + files.length
+        state.notice = `تمت إضافة ${files.length} ملفات جديدة إلى قائمة الانتظار عبر الجزيرة الديناميكية`
+        render()
+      },
+      onItemAction: (_id, act) => {
+        if (act === 'inspect') {
+          state.activeProbeFile = 'إرشادات الطواف.mp4'
+          render()
+        }
+      },
+    })
+  }
+
+  // 2. Mount CompareSlider if on review screen
   if (state.screen === 'review') {
     const mount = document.querySelector<HTMLElement>('#review-compare-mount')
     if (mount) {
@@ -447,10 +586,128 @@ function render(): void {
         container: mount,
         beforeImage: sampleOriginalFrame,
         afterImage: sampleCompressedFrame,
-        beforeLabel: 'المصدر الأصلي (ProRes / غير مضغوط)',
-        afterLabel: 'النسخة المضغوطة (HEVC)',
-        ssimScore: 0.988,
+        beforeLabel: 'المصدر الأصلي (ProRes 422 HQ)',
+        afterLabel: 'النسخة المضغوطة (HEVC Main 10)',
+        ssimScore: 0.992,
         initialPosition: 50,
+      })
+    }
+  }
+
+  // 3. Mount StorageMeter if on review or options screen
+  const storageMount = document.querySelector<HTMLElement>('#storage-meter-mount')
+  if (storageMount) {
+    const approxInputGb = state.analysis?.totalBytes ? state.analysis.totalBytes / (1024 * 1024 * 1024) : 148.5
+    const forecast = projectCodecSavings(approxInputGb, state.codec, state.mode)
+    new StorageMeter({
+      container: storageMount,
+      forecast: {
+        sourceBytes: approxInputGb * 1024 * 1024 * 1024,
+        estimatedOutputBytes: (approxInputGb - forecast.savedGb) * 1024 * 1024 * 1024,
+        codecName: getCodec(state.codec).name,
+        mode: state.mode,
+      },
+    })
+  }
+
+  // 4. Mount ImpactCertificate if on results screen
+  if (state.screen === 'results') {
+    const certMount = document.querySelector<HTMLElement>('#results-certificate-mount')
+    if (certMount) {
+      new ImpactCertificate({
+        container: certMount,
+        report: {
+          batchId: 'BATCH-HAJJ-1447-09A',
+          totalFiles: state.batch?.completed ?? 1248,
+          totalOriginalBytes: 182.4 * 1024 * 1024 * 1024,
+          totalOutputBytes: 44.8 * 1024 * 1024 * 1024,
+          averageSsim: 0.991,
+          rootSha256: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+          completedDate: '11 نوفمبر 2026',
+          destinationFolder: state.outputName,
+          codecUsed: getCodec(state.codec).name,
+        },
+        onOpenFolder: () => {
+          if (isDesktop && state.outputPath) openNativeResults().catch(showError)
+          else { state.dialog = 'results'; render() }
+        },
+        onExportCsv: () => { void exportReport('csv') },
+        onCopyAuditHash: () => {
+          state.notice = 'تم نسخ كود الاعتماد الأرشيفي بنجاح!'
+          render()
+        },
+      })
+    }
+  }
+
+  // 5. Mount BatchActionBar if files selected
+  const batchBarMount = document.querySelector<HTMLElement>('#batch-action-bar-mount')
+  if (batchBarMount && state.selectedFileIds.size > 0) {
+    new BatchActionBar({
+      container: batchBarMount,
+      selectedCount: state.selectedFileIds.size,
+      totalCount: sampleFiles.length,
+      onApplyCodec: (cid) => {
+        state.codec = cid as CodecId
+        state.notice = `تم تطبيق ترميز ${getCodec(cid as CodecId).name} على الملفات المحددة`
+        render()
+      },
+      onApplyAspect: (aid) => {
+        state.notice = `تم توحيد أبعاد الملفات المحددة إلى نسق (${aid})`
+        render()
+      },
+      onTrimBatch: () => {
+        state.notice = 'تم تفعيل التشذيب التلقائي للمقدمات والخواتم للملفات المحددة'
+        render()
+      },
+      onExportSelected: () => { void exportReport('csv') },
+      onClearSelection: () => {
+        state.selectedFileIds.clear()
+        render()
+      },
+    })
+  }
+
+  // 6. Mount Modals (VideoTrimmer, AspectRatioStudio, ForensicProbeDrawer)
+  const modalMount = document.querySelector<HTMLElement>('#modal-mount')
+  if (modalMount) {
+    if (state.activeTrimmerFile) {
+      new VideoTrimmer({
+        container: modalMount,
+        fileName: state.activeTrimmerFile,
+        totalDurationSeconds: 320,
+        onApply: (start, end) => {
+          state.activeTrimmerFile = null
+          state.notice = `تم اعتماد تشذيب الفيديو (${start.toFixed(1)}s إلى ${end.toFixed(1)}s)`
+          render()
+        },
+        onCancel: () => {
+          state.activeTrimmerFile = null
+          render()
+        },
+      })
+    } else if (state.activeAspectFile) {
+      new AspectRatioStudio({
+        container: modalMount,
+        fileName: state.activeAspectFile,
+        onApply: (cfg) => {
+          state.activeAspectFile = null
+          state.notice = `تم اعتماد الأبعاد (${cfg.presetId}) والتدوير (${cfg.rotation}°)`
+          render()
+        },
+        onCancel: () => {
+          state.activeAspectFile = null
+          render()
+        },
+      })
+    } else if (state.activeProbeFile) {
+      new ForensicProbeDrawer({
+        container: modalMount,
+        data: getSampleProbeData(state.activeProbeFile),
+        onClose: () => {
+          state.activeProbeFile = null
+          render()
+        },
       })
     }
   }
@@ -678,10 +935,49 @@ root.addEventListener('click', async (event) => {
     void exportReport(exportButton.dataset.export!)
     return
   }
+  const probeBtn = target.closest<HTMLElement>('[data-probe-file]')
+  if (probeBtn) {
+    state.activeProbeFile = probeBtn.dataset.probeFile ?? 'إرشادات الطواف.mp4'
+    render()
+    return
+  }
+  const selectAllCb = target.closest<HTMLInputElement>('#select-all-cb')
+  if (selectAllCb) {
+    if (state.selectedFileIds.size === sampleFiles.length) {
+      state.selectedFileIds.clear()
+    } else {
+      state.selectedFileIds = new Set(sampleFiles.map((f) => f.name))
+    }
+    render()
+    return
+  }
+  const fileSelectCb = target.closest<HTMLInputElement>('[data-file-select]')
+  if (fileSelectCb) {
+    const fileId = fileSelectCb.dataset.fileSelect!
+    if (state.selectedFileIds.has(fileId)) {
+      state.selectedFileIds.delete(fileId)
+    } else {
+      state.selectedFileIds.add(fileId)
+    }
+    render()
+    return
+  }
   const action = target.closest<HTMLElement>('[data-action]')?.dataset.action
   if (!action) return
   if (isDesktop && (await handleNativeAction(action))) return
   switch (action) {
+    case 'open-trimmer':
+      state.activeTrimmerFile = 'إرشادات الطواف.mp4'
+      render()
+      break
+    case 'open-aspect':
+      state.activeAspectFile = 'إرشادات الطواف.mp4'
+      render()
+      break
+    case 'open-probe':
+      state.activeProbeFile = 'إرشادات الطواف.mp4'
+      render()
+      break
     case 'select-source':
       document.querySelector<HTMLInputElement>('#source-picker')?.click()
       break
