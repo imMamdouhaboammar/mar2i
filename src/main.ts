@@ -1007,7 +1007,13 @@ root.addEventListener('click', async (event) => {
       startTimer()
       break
     case 'pause-preview':
-      state.paused ? startTimer() : ((state.paused = true), stopTimer(), render())
+      if (state.paused) {
+        startTimer()
+      } else {
+        state.paused = true
+        stopTimer()
+        render()
+      }
       break
     case 'cancel-preview':
       state.dialog = 'cancel'
