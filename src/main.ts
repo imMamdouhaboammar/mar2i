@@ -1,4 +1,5 @@
 import './style.css'
+import { batchProgressLabel } from './batch-label'
 import {
   isDesktop,
   pickDirectory,
@@ -8,7 +9,6 @@ import {
   nativeControl,
   openNativeResults,
   nativeReportContent,
-  batchProgressLabel,
   detectHardwareEncoders,
   type ScanResult,
   type BatchStatus,

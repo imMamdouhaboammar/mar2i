@@ -1,6 +1,7 @@
 import './test-setup'
 import { describe, expect, it } from 'bun:test'
-import { batchProgressLabel, type BatchStatus } from './native'
+import { batchProgressLabel } from './batch-label'
+import type { BatchStatus } from './native'
 
 const idleBatch: BatchStatus = {
   running: false,
