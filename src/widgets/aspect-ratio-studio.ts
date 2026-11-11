@@ -67,7 +67,7 @@ export class AspectRatioStudio {
 
   private render(): void {
     const activePreset = ASPECT_PRESETS.find((p) => p.id === this.activePresetId) ?? ASPECT_PRESETS[0]
-    
+
     // Calculate aspect ratio box style
     let aspectClass = 'aspect-16-9'
     if (this.activePresetId === '9-16') aspectClass = 'aspect-9-16'

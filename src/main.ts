@@ -241,7 +241,7 @@ function renderOptions(): string {
 
   return `<div class="page page-options">${screenHeading('خيارات الضغط والتوقعات', 'اختر ما يناسب استخدام الفيديو واطلع على التوفير المتوقع', true)}
     <div class="segmented" role="group" aria-label="غرض المعالجة"><button class="${state.mode === 'publish' ? 'active' : ''}" data-mode="publish" aria-pressed="${state.mode === 'publish'}">النشر والمشاركة</button><button class="${state.mode === 'archive' ? 'active' : ''}" data-mode="archive" aria-pressed="${state.mode === 'archive'}">الأرشفة عالية الجودة</button></div>
-    
+
     <!-- Live Predictive Storage Savings Meter Mount -->
     ${isDesktop ? '<p class="inline-warning">مقارنة الترميزات للشرح فقط. الترميز اليدوي والتقدير الفعلي للحجم غير متاحين بعد</p>' : '<div id="storage-meter-mount"></div>'}
 
@@ -529,7 +529,7 @@ function render(): void {
     <div id="batch-action-bar-mount"></div>
     ${dialogMarkup()}
   `
-  
+
   if (state.dialog) {
     const dialog = document.querySelector<HTMLDialogElement>('#app-dialog')
     dialog?.showModal()

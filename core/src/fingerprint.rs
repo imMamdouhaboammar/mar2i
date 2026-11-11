@@ -30,10 +30,10 @@ pub struct MediaFingerprint {
 pub fn compute_fingerprint(path: &Path) -> Result<MediaFingerprint> {
     let mut file = File::open(path)
         .with_context(|| format!("unable to open media file for fingerprinting: {}", path.display()))?;
-    
+
     let metadata = file.metadata()
         .with_context(|| format!("unable to read metadata for: {}", path.display()))?;
-    
+
     if !metadata.is_file() {
         bail!("path is not a regular file: {}", path.display());
     }

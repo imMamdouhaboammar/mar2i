@@ -32,7 +32,7 @@ describe('compression choice copy', () => {
 describe('ministry profiles catalog', () => {
   test('contains mandated ministry presets with strict policy constraints', () => {
     expect(ministryPresets.length).toBeGreaterThanOrEqual(4)
-    
+
     const master = ministryPresets.find((p) => p.id === 'master_archive')
     expect(master).toBeDefined()
     expect(master?.mode).toBe('archive')

@@ -243,7 +243,7 @@ export class ForensicProbeDrawer {
               </div>
               <code class="sha-code-block">${this.data.sparseSha256}</code>
               <p class="integrity-desc">تم توليد هذه البصمة بأخذ أخذ عينات متناثرة فائقة السرعة O(1) تشمل الحجم الدقيق مع 1MB من بداية الملف و 1MB من نهايته، مما يحول دون تكرار المعالجة في الأرشيف المركزي.</p>
-              
+
               <div class="integrity-class-card">
                 <span class="class-title">تصنيف الحفظ الأرشيفي:</span>
                 <strong>${this.data.preservationClass}</strong>

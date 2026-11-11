@@ -1,11 +1,11 @@
 /**
  * Visual A/B Frame Comparator Component for Mar2i (مرئي)
  * Inspired by compressO's MediaOutputCompareSlider architecture.
- * 
+ *
  * Provides an accessible, responsive, zero-dependency split slider
  * allowing Ministry inspectors to review visual fidelity side-by-side
  * with real-time SSIM index overlay, Loupe Magnifier, and Heatmap mode.
- * 
+ *
  * Fully supports RTL (Arabic) layout direction and keyboard navigation.
  */
 
@@ -165,13 +165,13 @@ export class CompareSlider {
           </div>
 
           <!-- Split Divider Handle -->
-          <div 
-            class="compare-handle" 
-            role="slider" 
+          <div
+            class="compare-handle"
+            role="slider"
             tabindex="0"
             aria-label="مقبض المقارنة البصرية"
-            aria-valuemin="0" 
-            aria-valuemax="100" 
+            aria-valuemin="0"
+            aria-valuemax="100"
             aria-valuenow="${this.position}"
             style="left: ${this.position}%;"
           >

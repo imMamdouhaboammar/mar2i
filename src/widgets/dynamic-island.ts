@@ -93,15 +93,15 @@ export class DynamicIsland {
     const strokeDashoffset = circumference - (this.progress / 100) * circumference
 
     this.container.innerHTML = `
-      <div class="dynamic-island-root ${this.isExpanded ? 'is-expanded' : 'is-collapsed'}" 
-           role="region" 
+      <div class="dynamic-island-root ${this.isExpanded ? 'is-expanded' : 'is-collapsed'}"
+           role="region"
            aria-label="جزيرة العمليات التفاعلية"
            dir="rtl">
-        
+
         <!-- Collapsed Pill View -->
-        <div class="island-pill" 
-             tabindex="0" 
-             role="button" 
+        <div class="island-pill"
+             tabindex="0"
+             role="button"
              aria-expanded="${this.isExpanded}"
              aria-label="تبديل فتح وإغلاق جزيرة العمليات">
           <div class="island-pill-inner">
@@ -109,8 +109,8 @@ export class DynamicIsland {
               <svg class="island-radial-svg" width="34" height="34" viewBox="0 0 34 34">
                 <circle class="radial-track" cx="17" cy="17" r="${radius}" fill="none" stroke="currentColor" stroke-width="3" opacity="0.15" />
                 <circle class="radial-fill" cx="17" cy="17" r="${radius}" fill="none" stroke="currentColor" stroke-width="3"
-                        stroke-dasharray="${circumference}" 
-                        stroke-dashoffset="${strokeDashoffset}" 
+                        stroke-dasharray="${circumference}"
+                        stroke-dashoffset="${strokeDashoffset}"
                         stroke-linecap="round" />
               </svg>
               <span class="radial-text">${Math.round(this.progress)}%</span>
@@ -126,7 +126,7 @@ export class DynamicIsland {
             </div>
 
             <div class="island-pill-badges">
-              <span class="island-shield-badge ${this.keepAwakeActive ? 'is-active' : ''}" 
+              <span class="island-shield-badge ${this.keepAwakeActive ? 'is-active' : ''}"
                     title="${this.keepAwakeActive ? 'مانع سكون النظام نشط (KeepAwake)' : 'مانع السكون غير مفعل'}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
@@ -195,8 +195,8 @@ export class DynamicIsland {
                   </div>
                   <div class="queue-row-status">
                     <span class="status-pill pill-${item.status}">
-                      ${item.status === 'compressing' ? `${Math.round(item.progress)}%` : 
-                        item.status === 'completed' ? 'مكتمل' : 
+                      ${item.status === 'compressing' ? `${Math.round(item.progress)}%` :
+                        item.status === 'completed' ? 'مكتمل' :
                         item.status === 'waiting' ? 'منتظر' : 'متوقف'}
                     </span>
                     <button class="queue-action-btn" type="button" data-item-id="${item.id}" data-action="inspect" title="فحص التفاصيل">
