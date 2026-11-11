@@ -44,6 +44,36 @@ impl<'a> RegisteredTemporary<'a> {
             .expect("temporary output exists until guard drop")
             .path()
     }
+
+    fn publish(&mut self, destination: &Path) -> Result<()> {
+        self.file
+            .as_ref()
+            .context("temporary output is no longer available")?
+            .as_file()
+            .sync_all()
+            .context("failed to synchronize verified output before publication")?;
+
+        let file = self
+            .file
+            .take()
+            .context("temporary output is no longer available")?;
+        let temporary_path = file.path().to_path_buf();
+        match file.persist_noclobber(destination) {
+            Ok(_) => {
+                if !temporary_path.exists()
+                    && let Some(registry) = self.registry
+                {
+                    // An absent temporary path is safely pruned on recovery if this fails.
+                    let _ = registry.unregister_partial(&temporary_path);
+                }
+                Ok(())
+            }
+            Err(error) => {
+                self.file = Some(error.file);
+                Err(error.error).context("verified output could not be published without overwrite")
+            }
+        }
+    }
 }
 
 impl Drop for RegisteredTemporary<'_> {
@@ -246,35 +276,6 @@ fn source_changed(source: &Path, starting: &fs::Metadata) -> Result<bool> {
         return Ok(true);
     }
     Ok(current.len() != starting.len() || current.modified()? != starting.modified()?)
-}
-
-fn publish_safely(temporary: &Path, destination: &Path) -> Result<()> {
-    if fs::symlink_metadata(destination).is_ok() {
-        bail!("output file already exists; refusing to overwrite");
-    }
-
-    match fs::hard_link(temporary, destination) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            // Check if destination appeared concurrently
-            if fs::symlink_metadata(destination).is_ok() {
-                bail!("destination appeared concurrently; refusing to overwrite");
-            }
-            // Fallback for filesystems that do not support hard links (e.g. FAT32, exFAT, some network mounts):
-            // Safely write to destination using create_new(true) (O_CREAT | O_EXCL) to prevent overwrite.
-            let mut src = File::open(temporary)?;
-            let mut dst = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(destination)
-                .with_context(|| {
-                    format!("cannot create destination at {}", destination.display())
-                })?;
-            std::io::copy(&mut src, &mut dst)?;
-            dst.sync_all()?;
-            Ok(())
-        }
-    }
 }
 
 fn make_output_name(relative: &Path, extension: &str, copy: bool) -> Result<PathBuf> {
@@ -530,7 +531,7 @@ pub fn run_one_with_registry(
         .prefix(".mar2i-partial-")
         .suffix(suffix)
         .tempfile_in(parent)?;
-    let tempfile = RegisteredTemporary::new(tempfile, registry)?;
+    let mut tempfile = RegisteredTemporary::new(tempfile, registry)?;
     let temporary = tempfile.path();
     let quality = match decision {
         Decision::Copy { ref reason } => {
@@ -822,7 +823,7 @@ pub fn run_one_with_registry(
             ),
         });
     }
-    publish_safely(temporary, &destination)?;
+    tempfile.publish(&destination)?;
 
     if let Decision::Copy { reason } = decision {
         Ok(RunOutcome::Copied {
@@ -837,5 +838,49 @@ pub fn run_one_with_registry(
             after,
             quality,
         })
+    }
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::RegisteredTemporary;
+    use std::fs;
+    use tempfile::{Builder, tempdir};
+
+    #[test]
+    fn publication_refuses_destination_created_after_temporary_file() {
+        let directory = tempdir().unwrap();
+        let temporary = Builder::new().tempfile_in(directory.path()).unwrap();
+        let mut publication = RegisteredTemporary::new(temporary, None).unwrap();
+        fs::write(publication.path(), b"verified_output").unwrap();
+        let destination = directory.path().join("output.mkv");
+        fs::write(&destination, b"unrelated_user_file").unwrap();
+
+        assert!(publication.publish(&destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"unrelated_user_file");
+
+        let path = publication.path().to_path_buf();
+        drop(publication);
+        assert!(
+            !path.exists(),
+            "failed publication must clean its temporary file"
+        );
+    }
+
+    #[test]
+    fn successful_publication_leaves_only_the_final_file() {
+        let directory = tempdir().unwrap();
+        let temporary = Builder::new().tempfile_in(directory.path()).unwrap();
+        let mut publication = RegisteredTemporary::new(temporary, None).unwrap();
+        fs::write(publication.path(), b"verified_output").unwrap();
+        let temporary_path = publication.path().to_path_buf();
+        let destination = directory.path().join("output.mkv");
+
+        publication.publish(&destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"verified_output");
+        assert!(
+            !temporary_path.exists(),
+            "published temporary file must be removed"
+        );
     }
 }
