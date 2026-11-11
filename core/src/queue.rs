@@ -2,7 +2,7 @@ use crate::policy::Mode;
 use crate::runner::PartialOutputRegistry;
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
-use std::fs;
+use std::fs::{self, File};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -86,6 +86,37 @@ fn validated_partial_path(root: &Path, path: &Path) -> Result<PathBuf> {
 const JOB_COLUMNS: &str = "id, relative, source, input_bytes, modified_ns, status, output, output_bytes, reason, quality, elapsed_ms";
 
 impl BatchQueue {
+    /// Hold this OS lock for the entire recovery or processing phase.
+    /// Opening the queue for read-only status polling does not acquire this lock.
+    pub(crate) fn acquire_processing_lease(&self) -> Result<File> {
+        let mut lock_path = self.db_path.as_os_str().to_os_string();
+        lock_path.push(".lock");
+        let lock_path = PathBuf::from(lock_path);
+        if let Ok(metadata) = fs::symlink_metadata(&lock_path)
+            && !metadata.file_type().is_file()
+        {
+            bail!("batch processing lock path is not a regular file");
+        }
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .with_context(|| {
+                format!(
+                    "cannot open batch processing lock at {}",
+                    lock_path.display()
+                )
+            })?;
+        file.try_lock().map_err(|error| {
+            anyhow::anyhow!(
+                "batch is already active in another process or cannot be locked: {error}"
+            )
+        })?;
+        Ok(file)
+    }
+
     fn connect(&self) -> Result<Connection> {
         let connection = Connection::open(&self.db_path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
@@ -283,6 +314,8 @@ impl BatchQueue {
     }
 
     pub fn recover(&self) -> Result<usize> {
+        // Fail closed while another process owns the batch, before touching active jobs or partials.
+        let _processing_lease = self.acquire_processing_lease()?;
         let connection = self.connect()?;
         let count = connection.execute(
             "UPDATE jobs SET status='interrupted', reason='previous process stopped during execution'

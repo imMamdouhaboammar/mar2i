@@ -300,6 +300,8 @@ pub fn run_batch_with_options(
     options: BatchOptions,
     control: &Control,
 ) -> Result<()> {
+    // Prevent another process from recovering and reclaiming our live jobs.
+    let _processing_lease = queue.acquire_processing_lease()?;
     if !control.wait_until_active() {
         return Ok(());
     }
