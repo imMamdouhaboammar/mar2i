@@ -180,7 +180,7 @@ function sidebar(): string {
       ${navItem('results', 'التقارير', 'report')}
       ${navItem('settings', 'الإعدادات', 'settings')}
     </nav>
-    <div class="sidebar-foot"><span class="availability-dot"></span> يعمل دون اتصال <span class="version">${isDesktop ? 'نسخة سطح المكتب الرسمية' : 'واجهة تجريبية'}</span></div>
+    <div class="sidebar-foot"><span class="availability-dot"></span> يعمل دون اتصال <span class="version">${isDesktop ? 'نسخة تطوير محلية' : 'واجهة تجريبية'}</span></div>
   </aside>`
 }
 
