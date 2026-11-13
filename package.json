@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "lint": "oxlint --deny-warnings .",
+    "lint": "oxlint --deny-warnings --disable-nested-config .",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.93.0",
     "@tauri-apps/cli": "2",
     "@types/bun": "^1.4.4",
     "happy-dom": "^21.0.4",

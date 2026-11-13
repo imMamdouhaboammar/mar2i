@@ -4,6 +4,12 @@
  * Designed for Saudi Ministry of Hajj & Umrah media cutting and press extraction.
  */
 
+export interface SelectedRange {
+  start: number
+  end: number
+  duration: number
+}
+
 export interface VideoTrimmerOptions {
   container: HTMLElement
   fileName: string
@@ -35,7 +41,7 @@ export class VideoTrimmer {
     this.render()
   }
 
-  public getSelectedRange(): { start: number; end: number; duration: number } {
+  public getSelectedRange(): SelectedRange {
     return {
       start: this.startTime,
       end: this.endTime,
@@ -56,18 +62,22 @@ export class VideoTrimmer {
     const secs = Math.floor(s % 60)
     const ms = Math.floor((s - Math.floor(s)) * 1000)
     const pad = (n: number, w = 2) => String(n).padStart(w, '0')
+
     return `${pad(mins)}:${pad(secs)}.${pad(ms, 3)}`
   }
 
   private parseTimecode(str: string): number | null {
     const parts = str.trim().split(':')
+
     if (parts.length === 2) {
       const mins = parseFloat(parts[0])
       const secs = parseFloat(parts[1])
+
       if (Number.isFinite(mins) && Number.isFinite(secs)) {
         return mins * 60 + secs
       }
     }
+
     return null
   }
 
@@ -169,8 +179,10 @@ export class VideoTrimmer {
 
   private drawWaveform(): void {
     const canvas = this.container.querySelector<HTMLCanvasElement>('.trimmer-waveform-canvas')
+
     if (!canvas) return
     const ctx = canvas.getContext('2d')
+
     if (!ctx) return
 
     const width = canvas.width
@@ -197,12 +209,14 @@ export class VideoTrimmer {
 
     // Deterministic pseudo-random seed based on filename
     let seed = 0
+
     for (let i = 0; i < this.fileName.length; i++) {
       seed = (seed << 5) - seed + this.fileName.charCodeAt(i)
     }
 
     const pseudoRandom = (idx: number) => {
       const x = Math.sin(seed + idx * 9.876) * 10000
+
       return x - Math.floor(x)
     }
 
@@ -242,6 +256,7 @@ export class VideoTrimmer {
     presetPills.forEach((pill) => {
       pill.addEventListener('click', () => {
         const type = pill.getAttribute('data-preset')
+
         if (type === 'full') {
           this.setRange(0, this.totalDuration)
         } else if (type === 'strip-heads') {
@@ -261,6 +276,7 @@ export class VideoTrimmer {
 
     startInput?.addEventListener('change', () => {
       const parsed = this.parseTimecode(startInput.value)
+
       if (parsed !== null) {
         this.setRange(parsed, this.endTime)
       } else {
@@ -270,6 +286,7 @@ export class VideoTrimmer {
 
     endInput?.addEventListener('change', () => {
       const parsed = this.parseTimecode(endInput.value)
+
       if (parsed !== null) {
         this.setRange(this.startTime, parsed)
       } else {

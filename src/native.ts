@@ -42,7 +42,10 @@ export type BatchStatus = {
 export async function pickDirectory(): Promise<string | null> {
   if (!isDesktop) return null
   const chosen = await open({ directory: true, multiple: false, title: 'اختر المجلد' })
-  return typeof chosen === 'string' ? chosen : null
+
+  if (chosen === null || Array.isArray(chosen)) return null
+
+  return chosen
 }
 
 export function analyzeDirectory(input: string, output: string, mode: string): Promise<ScanResult> {
@@ -113,6 +116,7 @@ export function detectHardwareEncoders(): Promise<HardwareReport> {
       recommendedHevc: null,
     })
   }
+
   return invoke<HardwareReport>('detect_hardware_encoders')
 }
 
@@ -120,6 +124,7 @@ export function getMinistryProfiles(): Promise<MinistryProfile[]> {
   if (!isDesktop) {
     return Promise.resolve([])
   }
+
   return invoke<MinistryProfile[]>('get_ministry_profiles')
 }
 
@@ -138,6 +143,7 @@ export function estimateBatchSavings(
       filesCount: 0,
     })
   }
+
   return invoke<BatchSavingsEstimate>('estimate_batch_savings', { input, mode, codec, crf })
 }
 
@@ -145,6 +151,7 @@ export function fingerprintMedia(path: string): Promise<MediaFingerprint> {
   if (!isDesktop) {
     return Promise.resolve({ hash: '', sizeBytes: 0 })
   }
+
   return invoke<MediaFingerprint>('fingerprint_media', { path })
 }
 

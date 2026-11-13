@@ -1,6 +1,9 @@
 export type Screen = 'new' | 'options' | 'review' | 'progress' | 'results' | 'settings'
+
 export type Mode = 'publish' | 'archive'
+
 export type CodecId = 'auto' | 'h264' | 'hevc' | 'av1' | 'vp9' | 'ffv1'
+
 export type Resource = 'low' | 'balanced' | 'maximum'
 
 export type Codec = {
@@ -109,21 +112,38 @@ export function recommendedCodec(mode: Mode): CodecId {
 
 export function savingsPercent(before: number, after: number): number {
   if (before <= 0 || !Number.isFinite(before) || !Number.isFinite(after)) return 0
+
   return Math.round(((before - after) / before) * 100)
 }
 
-export function progressPageWindow(total: number, requestedPage: number): { page: number; pages: number; start: number; end: number } {
+export interface PageWindow {
+  page: number
+  pages: number
+  start: number
+  end: number
+}
+
+export interface CodecSavingsProjection {
+  projectedGb: number
+  savedGb: number
+  percent: number
+}
+
+export function progressPageWindow(total: number, requestedPage: number): PageWindow {
   const pages = Math.max(1, Math.ceil(total / 30))
   const page = Math.min(pages - 1, Math.max(0, Math.trunc(requestedPage)))
+
   return { page, pages, start: page * 30, end: Math.min(total, (page + 1) * 30) }
 }
 
-export function projectCodecSavings(totalGb: number, codec: CodecId, mode: Mode): { projectedGb: number, savedGb: number, percent: number } {
+export function projectCodecSavings(totalGb: number, codec: CodecId, mode: Mode): CodecSavingsProjection {
   if (totalGb <= 0) return { projectedGb: 0, savedGb: 0, percent: 0 }
+
   if (mode === 'archive') {
     // Archival FFV1 typical ~45% reduction from uncompressed masters
     const projected = Math.round(totalGb * 0.55 * 10) / 10
     const saved = Math.round((totalGb - projected) * 10) / 10
+
     return { projectedGb: projected, savedGb: saved, percent: 45 }
   }
 
@@ -146,12 +166,14 @@ export function projectCodecSavings(totalGb: number, codec: CodecId, mode: Mode)
 export function safeCsvCell(value: string | number): string {
   const raw = String(value)
   const protectedValue = /^[\s]*[=+@\-\t\r]/.test(raw) ? `'${raw}` : raw
+
   return `"${protectedValue.replaceAll('"', '""')}"`
 }
 
 export function reportCsv(rows: FileRow[]): string {
   const header = ['الملف', 'الحجم قبل GB', 'الحجم بعد GB', 'التوفير %', 'الحالة', 'الترميز']
   const lines = rows.map((row) => [row.name, row.before, row.after, savingsPercent(row.before, row.after), row.status, row.codec].map(safeCsvCell).join(','))
+
   return '\uFEFF' + [header.map(safeCsvCell).join(','), ...lines].join('\r\n')
 }
 
@@ -162,6 +184,7 @@ export function escapeHtml(value: string): string {
 
 export function getSampleProbeData(fileName: string) {
   const isMov = fileName.toLowerCase().endsWith('.mov')
+
   return {
     fileName,
     fileSize: isMov ? 742 * 1024 * 1024 : 164 * 1024 * 1024,

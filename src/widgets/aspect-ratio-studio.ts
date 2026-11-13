@@ -70,6 +70,7 @@ export class AspectRatioStudio {
 
     // Calculate aspect ratio box style
     let aspectClass = 'aspect-16-9'
+
     if (this.activePresetId === '9-16') aspectClass = 'aspect-9-16'
     else if (this.activePresetId === '1-1') aspectClass = 'aspect-1-1'
     else if (this.activePresetId === '4-3') aspectClass = 'aspect-4-3'
@@ -221,6 +222,7 @@ export class AspectRatioStudio {
     presetCards.forEach((card) => {
       card.addEventListener('click', () => {
         const id = card.getAttribute('data-preset-id')
+
         if (id) this.setPreset(id)
       })
     })

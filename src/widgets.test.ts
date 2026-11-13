@@ -12,6 +12,7 @@ import { getSampleProbeData } from './data'
 describe('Widgets & Features Architecture Tests', () => {
   it('DynamicIsland mounts in collapsed state and expands correctly', () => {
     const container = document.createElement('div')
+
     const queue: QueueItem[] = [
       { id: '1', name: 'tawaf.mp4', originalSize: 1000, compressedSize: 500, codec: 'HEVC', status: 'completed', progress: 100 },
       { id: '2', name: 'hajj.mov', originalSize: 2000, codec: 'AV1', status: 'compressing', progress: 50 },
@@ -167,6 +168,7 @@ describe('Widgets & Features Architecture Tests', () => {
 
   it('CompareSlider initialises and changes position', () => {
     const container = document.createElement('div')
+
     const slider = new CompareSlider({
       container,
       beforeImage: 'data:image/svg+xml;utf8,<svg></svg>',
