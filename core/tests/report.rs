@@ -17,6 +17,29 @@ fn item(id: i64, filename: &str, status: &str, before: u64, after: Option<u64>) 
     }
 }
 
+fn item_with_stale_output_bytes(
+    id: i64,
+    filename: &str,
+    status: &str,
+    before: u64,
+    stale_output_bytes: u64,
+) -> Job {
+    // Simulates a failed job that has a stale output_bytes value (the bug scenario)
+    Job {
+        id,
+        relative: filename.to_owned(),
+        source: format!("/source/{filename}"),
+        input_bytes: before,
+        modified_ns: 1,
+        status: status.to_owned(),
+        output: None, // failed jobs have no published output path
+        output_bytes: Some(stale_output_bytes),
+        reason: Some("source identity changed since discovery".into()),
+        quality: None,
+        elapsed_ms: Some(500),
+    }
+}
+
 #[test]
 fn savings_include_only_accepted_smaller_outputs() {
     let rows = vec![
@@ -33,6 +56,40 @@ fn savings_include_only_accepted_smaller_outputs() {
     assert_eq!(totals.original_bytes, 180);
     assert_eq!(totals.published_bytes, 90);
     assert_eq!(totals.verified_savings_bytes, 60);
+}
+
+#[test]
+fn published_bytes_excludes_stale_output_bytes_on_failed_jobs() {
+    // A failed job may have a stale output_bytes value from a previous enqueue cycle.
+    // published_bytes must NOT include bytes from failed or interrupted jobs.
+    let rows = vec![
+        item(1, "good.mp4", "completed", 200, Some(80)),
+        item_with_stale_output_bytes(2, "bad.mp4", "failed", 100, 95),
+        item_with_stale_output_bytes(3, "interrupted.mp4", "interrupted", 150, 140),
+    ];
+    let totals = summarize(&rows);
+    assert_eq!(totals.completed, 1);
+    assert_eq!(totals.failed, 1);
+    // published_bytes must be 80 (only the completed job's output)
+    // NOT 80 + 95 + 140 = 315 (which the old bug would produce)
+    assert_eq!(
+        totals.published_bytes, 80,
+        "failed and interrupted jobs must not contribute to published_bytes"
+    );
+    assert_eq!(totals.verified_savings_bytes, 120); // 200 - 80
+}
+
+#[test]
+fn published_bytes_includes_skipped_jobs_with_actual_output() {
+    // Skipped (byte-identical copy) jobs have a real published output path and bytes.
+    let rows = vec![
+        item(1, "copy.mp4", "skipped", 50, Some(50)), // byte-identical copy has output
+        item(2, "rejected.mp4", "skipped", 30, None), // rejected/skipped without output
+    ];
+    let totals = summarize(&rows);
+    // Only the copy (skipped-with-output) counts toward published_bytes
+    assert_eq!(totals.published_bytes, 50);
+    assert_eq!(totals.verified_savings_bytes, 0); // copies have no savings
 }
 
 #[test]
