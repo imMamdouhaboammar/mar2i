@@ -1,4 +1,9 @@
 use crate::queue::Job;
+use anyhow::{Context, Result};
+use std::fs::File;
+use std::io::{ErrorKind, Write};
+use std::path::Path;
+use tempfile::NamedTempFile;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Summary {
@@ -21,6 +26,14 @@ fn savings(row: &Job) -> u64 {
     }
 }
 
+fn published_output_bytes(row: &Job) -> u64 {
+    if row.status == "completed" || (row.status == "skipped" && row.output.is_some()) {
+        row.output_bytes.unwrap_or(0)
+    } else {
+        0
+    }
+}
+
 pub fn summarize(jobs: &[Job]) -> Summary {
     let mut summary = Summary {
         files: jobs.len(),
@@ -30,7 +43,7 @@ pub fn summarize(jobs: &[Job]) -> Summary {
         summary.original_bytes = summary.original_bytes.saturating_add(row.input_bytes);
         summary.published_bytes = summary
             .published_bytes
-            .saturating_add(row.output_bytes.unwrap_or(0));
+            .saturating_add(published_output_bytes(row));
         summary.verified_savings_bytes =
             summary.verified_savings_bytes.saturating_add(savings(row));
         match row.status.as_str() {
@@ -41,6 +54,45 @@ pub fn summarize(jobs: &[Job]) -> Summary {
         }
     }
     summary
+}
+
+#[cfg(unix)]
+fn sync_dir(dir: &Path) -> Result<()> {
+    let handle = File::open(dir)?;
+    match handle.sync_all() {
+        Ok(()) => Ok(()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                ErrorKind::Unsupported | ErrorKind::InvalidInput
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+#[cfg(not(unix))]
+fn sync_dir(_dir: &Path) -> Result<()> {
+    Ok(())
+}
+
+pub fn atomic_write_file(path: &Path, contents: &[u8]) -> Result<()> {
+    let parent = path.parent().context("missing target directory")?;
+    let mut file = NamedTempFile::new_in(parent)?;
+    file.write_all(contents)?;
+    file.flush()?;
+    file.as_file().sync_all()?;
+    file.persist(path).map_err(|error| error.error)?;
+    sync_dir(parent)?;
+    Ok(())
+}
+
+pub fn write_reports(state_dir: &Path, jobs: &[Job]) -> Result<()> {
+    atomic_write_file(&state_dir.join("report.csv"), report_csv(jobs).as_bytes())?;
+    atomic_write_file(&state_dir.join("report.html"), report_html(jobs).as_bytes())?;
+    Ok(())
 }
 
 fn csv_cell(value: &str) -> String {

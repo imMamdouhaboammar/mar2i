@@ -2,7 +2,7 @@ use mar2i_core::discovery::{discover, validate_directories};
 use mar2i_core::media::inspect;
 use mar2i_core::policy::{CodecPreference, Decision, Mode, choose_plan};
 use mar2i_core::queue::BatchQueue;
-use mar2i_core::report::{report_csv, report_html, summarize};
+use mar2i_core::report::{summarize, write_reports};
 use mar2i_core::worker::{
     BatchOptions, Control, ResourceProfile, modified_ns, run_batch_with_options,
 };
@@ -225,8 +225,7 @@ fn start_batch(
                 &control,
             )?;
             let jobs = queue.list()?;
-            std::fs::write(state_dir.join("report.csv"), report_csv(&jobs))?;
-            std::fs::write(state_dir.join("report.html"), report_html(&jobs))?;
+            write_reports(&state_dir, &jobs)?;
             Ok(())
         })();
         if let Err(error) = result {

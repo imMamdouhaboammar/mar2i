@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use mar2i_core::discovery::{discover, validate_directories};
 use mar2i_core::estimate::estimate_video_size;
 use mar2i_core::fingerprint::compute_fingerprint;
@@ -8,14 +8,13 @@ use mar2i_core::media::inspect;
 use mar2i_core::policy::{Decision, Mode, choose_plan};
 use mar2i_core::profiles::standard_profiles;
 use mar2i_core::queue::BatchQueue;
-use mar2i_core::report::{report_csv, report_html, summarize};
+use mar2i_core::report::{summarize, write_reports};
 use mar2i_core::worker::{Control, ResourceProfile, modified_ns, run_batch};
 use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
-use tempfile::NamedTempFile;
+use std::path::PathBuf;
 
 fn mode_from(text: &str) -> Result<Mode> {
     match text {
@@ -32,15 +31,6 @@ fn profile_from(text: &str) -> Result<ResourceProfile> {
         "maximum" | "max" => Ok(ResourceProfile::Maximum),
         _ => bail!("resource profile must be low, balanced or maximum"),
     }
-}
-
-fn atomic_report(path: &Path, contents: &[u8]) -> Result<()> {
-    let parent = path.parent().context("missing report directory")?;
-    let mut file = NamedTempFile::new_in(parent)?;
-    std::io::Write::write_all(&mut file, contents)?;
-    file.as_file().sync_all()?;
-    file.persist(path).map_err(|error| error.error)?;
-    Ok(())
 }
 
 fn print_help() {
@@ -237,8 +227,7 @@ fn command_line() -> Result<()> {
     }
 
     let jobs = queue.list()?;
-    atomic_report(&db_dir.join("report.csv"), report_csv(&jobs).as_bytes())?;
-    atomic_report(&db_dir.join("report.html"), report_html(&jobs).as_bytes())?;
+    write_reports(&db_dir, &jobs)?;
 
     let summary = summarize(&jobs);
     println!(
