@@ -98,32 +98,59 @@ fn parse_codec(codec: &str) -> Result<CodecPreference, String> {
     }
 }
 
-fn media_binary(name: &str) -> PathBuf {
+pub fn resolve_media_binary(name: &str, current_exe: Option<&Path>) -> PathBuf {
     let filename = if cfg!(windows) {
         format!("{name}.exe")
     } else {
         name.to_owned()
     };
-    if let Ok(executable) = std::env::current_exe()
+
+    // 1. Explicit environment variable overrides
+    let env_var = format!("MAR2I_{}_PATH", name.to_uppercase());
+    if let Ok(override_path) = std::env::var(&env_var) {
+        let p = PathBuf::from(override_path);
+        if p.is_file() {
+            return p;
+        }
+    }
+    if let Ok(media_dir) = std::env::var("MAR2I_MEDIA_DIR") {
+        let candidate = Path::new(&media_dir).join(&filename);
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+
+    // 2. Bundled and resource paths relative to executable (offline installation)
+    if let Some(executable) = current_exe
         && let Some(parent) = executable.parent()
     {
         for candidate in [
             parent.join(&filename),
             parent.join("bin").join(&filename),
             parent.join("../Resources").join(&filename),
+            parent.join("../Resources/bin").join(&filename),
         ] {
             if candidate.is_file() {
-                return candidate;
+                return std::fs::canonicalize(&candidate).unwrap_or(candidate);
             }
         }
     }
+
+    // 3. Known system locations (development / local machine)
     for root in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
         let path = Path::new(root).join(&filename);
         if path.is_file() {
             return path;
         }
     }
+
+    // 4. Fallback to bare filename for PATH lookup
     PathBuf::from(filename)
+}
+
+fn media_binary(name: &str) -> PathBuf {
+    let current_exe = std::env::current_exe().ok();
+    resolve_media_binary(name, current_exe.as_deref())
 }
 
 fn validate_paths(input: &Path, output: &Path) -> Result<(), String> {
@@ -474,4 +501,52 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while building Tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_media_binary;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn resolve_media_binary_prioritizes_bundled_resources() {
+        let tmp = tempdir().unwrap();
+        let app_dir = tmp.path().join("Mar2i.app/Contents/MacOS");
+        let res_bin_dir = tmp.path().join("Mar2i.app/Contents/Resources/bin");
+        fs::create_dir_all(&app_dir).unwrap();
+        fs::create_dir_all(&res_bin_dir).unwrap();
+
+        let fake_exe = app_dir.join("Mar2i");
+        fs::write(&fake_exe, b"executable").unwrap();
+
+        let bundled_ffmpeg = res_bin_dir.join("ffmpeg");
+        fs::write(&bundled_ffmpeg, b"bundled ffmpeg binary").unwrap();
+
+        let resolved = resolve_media_binary("ffmpeg", Some(&fake_exe));
+        assert_eq!(
+            std::fs::canonicalize(resolved).unwrap(),
+            std::fs::canonicalize(bundled_ffmpeg).unwrap(),
+            "offline bundled resource binary must take precedence over system PATH"
+        );
+    }
+
+    #[test]
+    fn resolve_media_binary_prioritizes_explicit_env_override() {
+        let tmp = tempdir().unwrap();
+        let custom_ffmpeg = tmp.path().join("custom_ffmpeg");
+        fs::write(&custom_ffmpeg, b"custom binary").unwrap();
+
+        // Safety: tests run single-threaded in this module
+        unsafe {
+            std::env::set_var("MAR2I_FFMPEG_PATH", &custom_ffmpeg);
+        }
+
+        let resolved = resolve_media_binary("ffmpeg", None);
+        assert_eq!(resolved, custom_ffmpeg);
+
+        unsafe {
+            std::env::remove_var("MAR2I_FFMPEG_PATH");
+        }
+    }
 }

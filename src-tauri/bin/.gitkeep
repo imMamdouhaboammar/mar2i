@@ -1,0 +1,3 @@
+# Place audited, redistributable offline media binaries here:
+# - macOS Apple Silicon: ffmpeg, ffprobe
+# - Windows x86-64: ffmpeg.exe, ffprobe.exe
