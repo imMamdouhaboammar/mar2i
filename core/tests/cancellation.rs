@@ -3,8 +3,9 @@ use mar2i_core::queue::BatchQueue;
 use mar2i_core::worker::{Control, ResourceProfile, modified_ns, run_batch};
 use sha2::{Digest, Sha256};
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -414,17 +415,23 @@ fn restart_and_recovery_resumes_interrupted_work_to_completion() {
 #[test]
 fn child_process_termination_timeout_forces_sigkill() {
     use mar2i_core::runner::terminate_child_bounded;
-    // Spawn a child process that explicitly ignores SIGTERM
+    // Spawn a child process that explicitly ignores SIGTERM and signals readiness on stdout
     let mut child = Command::new("python3")
         .args([
             "-c",
-            "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)",
+            "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); time.sleep(30)",
         ])
+        .stdout(Stdio::piped())
         .spawn()
         .expect("spawn python3 ignoring SIGTERM");
 
-    // Give python process time to install signal handler
-    thread::sleep(Duration::from_millis(100));
+    let stdout = child.stdout.take().expect("take child stdout");
+    let mut reader = BufReader::new(stdout);
+    let mut ready_line = String::new();
+    reader
+        .read_line(&mut ready_line)
+        .expect("read readiness line from python3");
+    assert_eq!(ready_line.trim(), "ready");
 
     let start = std::time::Instant::now();
     terminate_child_bounded(&mut child).expect("bounded termination succeeds");
