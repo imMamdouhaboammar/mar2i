@@ -41,10 +41,12 @@ export class ImpactCertificate {
     const units = ['B', 'KB', 'MB', 'GB', 'TB']
     let val = bytes
     let u = 0
+
     while (val >= 1024 && u < units.length - 1) {
       val /= 1024
       u++
     }
+
     return `${val.toFixed(val < 10 && u > 0 ? 1 : 0)} ${units[u]}`
   }
 

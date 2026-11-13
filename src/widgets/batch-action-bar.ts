@@ -31,6 +31,7 @@ export class BatchActionBar {
 
   public updateCount(selectedCount: number, totalCount?: number): void {
     this.selectedCount = selectedCount
+
     if (totalCount !== undefined) this.totalCount = totalCount
     this.render()
   }
@@ -38,6 +39,7 @@ export class BatchActionBar {
   private render(): void {
     if (this.selectedCount <= 0) {
       this.container.innerHTML = ''
+
       return
     }
 

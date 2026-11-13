@@ -12,11 +12,48 @@ test('native progress pages expose every file in a 61-job batch', async () => {
     quality: null,
     elapsedMs: null,
   }))
+
   let folderPick = 0
   let running = true
-  const win = window as typeof window & {
-    __TAURI_INTERNALS__?: { invoke: (command: string) => Promise<unknown> }
+
+  interface TauriMockAnalysis {
+    total: number
+    totalBytes: number
+    supported: number
+    skipped: number
+    details: string[]
   }
+
+  interface TauriMockBatchStatus {
+    running: boolean
+    paused: boolean
+    cancelled: boolean
+    error: string | null
+    files: number
+    completed: number
+    skipped: number
+    failed: number
+    queued: number
+    active: number
+    inputBytes: number
+    outputBytes: number
+    verifiedSavingsBytes: number
+    jobs: typeof jobs
+  }
+
+  interface TauriMockHardware {
+    availableEncoders: string[]
+    recommendedH264: string | null
+    recommendedHevc: string | null
+  }
+
+  type TauriMockResponse = string | null | TauriMockAnalysis | TauriMockBatchStatus | TauriMockHardware
+
+  // SAFETY: Mocking Tauri internal IPC interface in test environment
+  const win = window as typeof window & {
+    __TAURI_INTERNALS__?: { invoke: (command: string) => Promise<TauriMockResponse> }
+  }
+
   win.__TAURI_INTERNALS__ = {
     invoke: async (command) => {
       switch (command) {
@@ -57,16 +94,20 @@ test('native progress pages expose every file in a 61-job batch', async () => {
     await click('[data-action="start-preview"]')
 
     const seen = new Set<string>()
+
     for (const expectedRows of [30, 30, 1]) {
       const rows = Array.from(document.querySelectorAll('.progress-table tbody tr'))
       expect(rows).toHaveLength(expectedRows)
+
       for (const row of rows) {
         const label = row.querySelector('.name-cell span')?.textContent?.trim()
         expect(label).toBeTruthy()
         seen.add(label!)
       }
+
       if (expectedRows !== 1) await click('[data-progress-next]')
     }
+
     expect(seen.size).toBe(61)
     expect(seen.has('مقطع-061.mp4')).toBe(true)
   } finally {

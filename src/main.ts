@@ -119,48 +119,54 @@ if (isDesktop) {
 
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return 'غير متاح'
+
   if (bytes < 1024) return `${bytes} B`
   const units = ['KB', 'MB', 'GB', 'TB']
   let number = bytes / 1024
   let position = 0
+
   while (number >= 1024 && position < units.length - 1) {
     number /= 1024
     position++
   }
+
   return `${number.toFixed(number < 10 ? 1 : 0)} ${units[position]}`
 }
 
-function showError(error: unknown): void {
-  state.notice = String(error)
+function showError(error: Error | string): void {
+  state.notice = error instanceof Error ? error.message : error
   render()
 }
 
-const paths: Record<string, string> = {
-  layers: '<path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>',
-  play: '<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8Z"/>',
-  report: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/>',
-  settings: '<path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4.7 9.5 3 8l2-3 2.2.8a8 8 0 0 1 2.2-1.2L10 2h4l.6 2.6a8 8 0 0 1 2.2 1.2L19 5l2 3-1.7 1.5a8 8 0 0 1 0 5L21 16l-2 3-2.2-.8a8 8 0 0 1-2.2 1.2L14 22h-4l-.6-2.6a8 8 0 0 1-2.2-1.2L5 19l-2-3 1.7-1.5a8 8 0 0 1 0-5Z"/>',
-  folder: '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
-  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 17h.01"/>',
-  chevron: '<path d="m6 9 6 6 6-6"/>',
-  arrow: '<path d="m14 7-5 5 5 5"/>',
-  check: '<path d="m5 12 4 4L19 6"/>',
-  pause: '<path d="M9 5v14M15 5v14"/>',
-  search: '<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/>',
-  download: '<path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3"/>',
-  alert: '<path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5m0 3h.01"/>',
-  video: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3V9Z"/>',
-  close: '<path d="m5 5 14 14M19 5 5 19"/>',
-  switch: '<path d="M3 7h18M3 12h18M3 17h18"/>',
-  back: '<path d="m15 18-6-6 6-6"/>',
-  cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/>',
-  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
-  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>',
-  crop: '<path d="M6.13 1 6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13 16 6a2 2 0 0 1 2 2v15"/>',
+function iconPath(name: string): string {
+  switch (name) {
+    case 'layers': return '<path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/>'
+    case 'play': return '<circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4V8Z"/>'
+    case 'report': return '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/>'
+    case 'settings': return '<path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M4.7 9.5 3 8l2-3 2.2.8a8 8 0 0 1 2.2-1.2L10 2h4l.6 2.6a8 8 0 0 1 2.2 1.2L19 5l2 3-1.7 1.5a8 8 0 0 1 0 5L21 16l-2 3-2.2-.8a8 8 0 0 1-2.2 1.2L14 22h-4l-.6-2.6a8 8 0 0 1-2.2-1.2L5 19l-2-3 1.7-1.5a8 8 0 0 1 0-5Z"/>'
+    case 'folder': return '<path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>'
+    case 'help': return '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 17h.01"/>'
+    case 'chevron': return '<path d="m6 9 6 6 6-6"/>'
+    case 'arrow': return '<path d="m14 7-5 5 5 5"/>'
+    case 'check': return '<path d="m5 12 4 4L19 6"/>'
+    case 'pause': return '<path d="M9 5v14M15 5v14"/>'
+    case 'search': return '<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/>'
+    case 'download': return '<path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v3h16v-3"/>'
+    case 'alert': return '<path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v5m0 3h.01"/>'
+    case 'video': return '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3V9Z"/>'
+    case 'close': return '<path d="m5 5 14 14M19 5 5 19"/>'
+    case 'switch': return '<path d="M3 7h18M3 12h18M3 17h18"/>'
+    case 'back': return '<path d="m15 18-6-6 6-6"/>'
+    case 'cpu': return '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3"/>'
+    case 'shield': return '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'
+    case 'scissors': return '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/>'
+    case 'crop': return '<path d="M6.13 1 6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13 16 6a2 2 0 0 1 2 2v15"/>'
+    default: return '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3V9Z"/>'
+  }
 }
 
 function icon(name: string, size = 19): string {
-  return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] ?? paths.video}</svg>`
+  return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPath(name)}</svg>`
 }
 
 function button(label: string, action: string, variant = 'secondary', extra = ''): string {
@@ -169,6 +175,7 @@ function button(label: string, action: string, variant = 'secondary', extra = ''
 
 function navItem(screen: Screen, label: string, image: string): string {
   const active = state.screen === screen || (screen === 'new' && state.screen === 'review')
+
   return `<button type="button" class="nav-item${active ? ' active' : ''}" data-screen="${screen}" aria-current="${active ? 'page' : 'false'}">${icon(image, 20)}<span>${label}</span></button>`
 }
 
@@ -223,6 +230,7 @@ function renderNew(): string {
 
 function codecRow(codec: typeof codecs[number]): string {
   const active = state.codec === codec.id
+
   return `<div class="codec-row${active ? ' selected' : ''}" role="row">
     <div class="codec-name" role="cell"><input type="radio" name="codec" value="${codec.id}" ${active ? 'checked' : ''} aria-label="اختيار ${codec.name}" /><strong dir="auto">${codec.name}</strong><button class="tiny-help${state.help === codec.id ? ' is-current' : ''}" data-help="${codec.id}" type="button" aria-label="شرح ${codec.name}">${icon('help', 18)}</button></div>
     <span role="cell">${codec.size}</span><span role="cell">${codec.speed}</span><span role="cell">${codec.compatibility}</span>
@@ -231,11 +239,13 @@ function codecRow(codec: typeof codecs[number]): string {
 
 function toggle(): string {
   const hwDetected = state.hardwareReport?.availableEncoders.length ? true : false
+
   const label = isDesktop
     ? 'تسريع GPU غير متصل بالمعالجة الفعلية بعد، ويستخدم التطبيق حاليًا CPU'
     : hwDetected
       ? `تسريع بطاقة الرسوميات GPU متاح (${state.hardwareReport?.availableEncoders[0]?.encoder ?? 'مفعل'})`
       : 'استخدام تسريع الجهاز عند توفره'
+
   return `<label class="toggle-field"><input type="checkbox" id="hardware" ${state.hardware ? 'checked' : ''} ${isDesktop ? 'disabled' : ''} /><span class="switch" aria-hidden="true"></span><span>${label}</span></label>`
 }
 
@@ -334,29 +344,36 @@ function progressRows(): string {
   ].map(([name, before, after, label, pct, status]) => `<tr><td class="name-cell">${icon('video', 18)}<span>${name}</span></td><td class="latin">${before}</td><td class="latin">${after}</td><td><span class="status ${status}">${label}</span></td><td><div class="cell-progress"><div class="mini-track"><span style="width:${pct}%"></span></div><b class="latin">${pct}%</b></div></td></tr>`).join('')
 }
 
+function statusLabel(status: string): string {
+  switch (status) {
+    case 'completed': return 'مكتمل'
+    case 'skipped': return 'تم التخطي'
+    case 'failed': return 'فشل'
+    case 'processing': return 'جارٍ الضغط'
+    case 'verifying': return 'جارٍ التحقق'
+    case 'queued': return 'بانتظار الدور'
+    case 'interrupted': return 'بانتظار الاستكمال'
+    default: return status
+  }
+}
+
 function nativeProgressRows() {
   const jobs = state.batch?.jobs ?? []
-  const labels: Record<string, string> = {
-    completed: 'مكتمل',
-    skipped: 'تم التخطي',
-    failed: 'فشل',
-    processing: 'جارٍ الضغط',
-    verifying: 'جارٍ التحقق',
-    queued: 'بانتظار الدور',
-    interrupted: 'بانتظار الاستكمال',
-  }
   const { start, end } = progressPageWindow(jobs.length, state.progressPage)
+
   return jobs.slice(start, end).map((job) => {
     const done = ['completed', 'skipped', 'failed'].includes(job.status)
+
     return `<tr><td class="name-cell">${icon('video', 18)}<span>${escapeHtml(job.relative)}</span></td>
       <td class="latin">${formatBytes(job.inputBytes)}</td><td class="latin">${job.outputBytes === null ? 'غير متاح' : formatBytes(job.outputBytes)}</td>
-      <td><span class="status ${job.status === 'completed' ? 'complete' : job.status === 'failed' ? 'verifying' : 'waiting'}">${labels[job.status] ?? job.status}</span></td>
+      <td><span class="status ${job.status === 'completed' ? 'complete' : job.status === 'failed' ? 'verifying' : 'waiting'}">${statusLabel(job.status)}</span></td>
       <td><div class="cell-progress"><div class="mini-track"><span style="width:${done ? 100 : 0}%"></span></div><b class="latin">${done ? '100%' : 'قيد العمل'}</b></div></td></tr>`
   }).join('') || '<tr><td colspan="5" class="no-results">جارٍ تجهيز قائمة الملفات</td></tr>'
 }
 
 function renderProgressPagination(totalJobs: number): string {
   const { page, pages } = progressPageWindow(totalJobs, state.progressPage)
+
   return `<nav class="progress-pagination" aria-label="صفحات ملفات الدفعة">
     <button type="button" data-progress-prev ${page === 0 ? 'disabled' : ''}>السابق</button>
     <span aria-live="polite">صفحة ${page + 1} من ${pages}</span>
@@ -399,7 +416,9 @@ function renderProgress(): string {
 
 function status(row: typeof sampleFiles[number]): string {
   if (row.status === 'complete') return `<span class="row-status successful">${icon('check', 15)} مكتمل</span>`
+
   if (row.status === 'unchanged') return '<span class="row-status neutral">دون تغيير</span>'
+
   return `<span class="row-status needs-review">${icon('alert', 16)} يحتاج مراجعة</span>`
 }
 
@@ -407,9 +426,12 @@ function resultRows(): string {
   if (isDesktop) return state.batch ? nativeResultRows() : '<tr><td colspan="6" class="no-results">لا توجد نتائج لدفعة بعد</td></tr>'
   const query = state.search.trim().toLocaleLowerCase('ar')
   const filtered = sampleFiles.filter((file) => file.name.toLocaleLowerCase('ar').includes(query))
+
   if (!filtered.length) return `<tr><td colspan="6" class="no-results">لا توجد ملفات تطابق البحث</td></tr>`
+
   return filtered.map((row) => {
     const isSelected = state.selectedFileIds.has(row.name)
+
     return `<tr class="${row.status === 'review' ? 'row-warning' : ''} ${isSelected ? 'row-selected' : ''}" data-file="${escapeHtml(row.name)}">
       <td style="width: 40px; text-align: center;">
         <input type="checkbox" class="file-cb" data-file-select="${escapeHtml(row.name)}" ${isSelected ? 'checked' : ''} aria-label="تحديد ${escapeHtml(row.name)}" />
@@ -436,12 +458,15 @@ function resultRows(): string {
 function nativeResultRows() {
   const search = state.search.trim().toLocaleLowerCase('ar')
   const jobs = (state.batch?.jobs ?? []).filter((job) => job.relative.toLocaleLowerCase('ar').includes(search))
+
   if (!jobs.length) return '<tr><td colspan="6" class="no-results">لا توجد ملفات تطابق البحث أو لم تبدأ أي دفعة بعد</td></tr>'
+
   return jobs.map((job) => {
     const name = escapeHtml(job.relative)
     const saving = job.status === 'completed' && job.outputBytes !== null && job.inputBytes > 0 ? Math.max(0, 100 * (job.inputBytes - job.outputBytes) / job.inputBytes) : 0
     const label = job.status === 'completed' ? 'مكتمل' : job.status === 'skipped' ? 'دون تغيير' : job.status === 'failed' ? 'فشل' : 'قيد العمل'
     const isSelected = state.selectedFileIds.has(job.relative)
+
     return `<tr class="${isSelected ? 'row-selected' : ''}">
       <td style="width: 40px; text-align: center;">
         <input type="checkbox" class="file-cb" data-file-select="${name}" disabled title="الإجراءات المجمعة قيد التطوير" ${isSelected ? 'checked' : ''} aria-label="تحديد ${name}" />
@@ -483,6 +508,7 @@ function renderSettings(): string {
     { id: 'balanced', name: 'متوازن', description: 'استهلاك مناسب لمعظم الأجهزة' },
     { id: 'maximum', name: 'أقصى سرعة', description: 'يخصص موارد أكثر لعملية الضغط' },
   ]
+
   return `<div class="page page-settings">${screenHeading('الإعدادات', 'اضبط طريقة استخدام موارد جهازك وسلوك المعالجة')}
     <section class="settings-section"><h2>استهلاك موارد الجهاز</h2><div class="resource-options">${options.map((option) => `<label class="resource-option ${state.resource === option.id ? 'selected' : ''}"><input type="radio" name="resource" value="${option.id}" ${state.resource === option.id ? 'checked' : ''} /><span><strong>${option.name}</strong><small>${option.description}</small></span></label>`).join('')}</div></section>
     <section class="settings-section"><h2>تسريع الترميز</h2>${toggle()}<p class="setting-description">${isDesktop ? 'النسخة الحالية تستخدم ترميز CPU. فحص توافق GPU لا يعني تشغيله أثناء الضغط' : 'اختيار GPU هنا توضيحي، وتفعيله للضغط الحقيقي قيد التطوير'}</p></section>
@@ -492,8 +518,11 @@ function renderSettings(): string {
 
 function dialogMarkup(): string {
   if (state.dialog === 'output') return `<dialog id="app-dialog" class="app-dialog" aria-labelledby="dialog-heading"><form method="dialog"><h2 id="dialog-heading">مجلد حفظ النتائج</h2><p>اكتب اسم المجلد الذي تود ظهوره في المعاينة</p><label for="output-directory-name">اسم المجلد</label><input id="output-directory-name" value="${escapeHtml(state.outputName)}" required maxlength="120" /><div class="dialog-actions">${button('اعتماد', 'confirm-output', 'primary')}${button('إلغاء', 'close-dialog', 'outline')}</div></form></dialog>`
+
   if (state.dialog === 'cancel') return `<dialog id="app-dialog" class="app-dialog" aria-labelledby="dialog-heading"><h2 id="dialog-heading">${isDesktop ? 'إلغاء المهام المنتظرة؟' : 'إلغاء معاينة المعالجة؟'}</h2><p>${isDesktop ? 'المهام الحالية ستنتهي أولًا، ولن تبدأ مهام جديدة، والملفات الأصلية ستظل محفوظة' : 'ستعود إلى إعداد الدفعة، ولن تتغير أي ملفات أصلية'}</p><div class="dialog-actions">${button(isDesktop ? 'تأكيد الإلغاء' : 'العودة للدفعة', 'confirm-cancel', 'danger')}${button('متابعة المعالجة', 'close-dialog', 'outline')}</div></dialog>`
+
   if (state.dialog === 'results') return `<dialog id="app-dialog" class="app-dialog" aria-labelledby="dialog-heading"><h2 id="dialog-heading">مجلد النتائج</h2><p>هذه نسخة لمعاينة الواجهة، ولم تُنتج ملفات مضغوطة أو يُنشأ مجلد نتائج على جهازك بعد</p><div class="dialog-actions">${button('فهمت', 'close-dialog', 'primary')}</div></dialog>`
+
   return ''
 }
 
@@ -514,10 +543,11 @@ async function togglePause(): Promise<void> {
       await nativeControl(state.batch.paused ? 'resume' : 'pause')
       await pollNative()
     } catch (e) {
-      showError(e)
+      showError(e instanceof Error ? e : String(e))
     }
   } else {
     state.paused = !state.paused
+
     if (state.paused) stopTimer()
     else startTimer()
     render()
@@ -553,6 +583,7 @@ function render(): void {
 
   // 1. Mount or update Dynamic Island
   const islandSlot = document.querySelector<HTMLElement>('#dynamic-island-slot')
+
   if (islandSlot && !isDesktop) {
     const queueItems: QueueItem[] = [
       { id: '1', name: 'إرشادات الطواف.mp4', originalSize: 164 * 1024 * 1024, compressedSize: 72 * 1024 * 1024, codec: 'HEVC', status: state.progress > 50 ? 'completed' : 'compressing', progress: state.progress },
@@ -560,6 +591,7 @@ function render(): void {
       { id: '3', name: 'رحلة المعتمر_04.mp4', originalSize: 410 * 1024 * 1024, codec: 'AV1', status: 'waiting', progress: 0 },
       { id: '4', name: 'لقطات التوعية.mov', originalSize: 283 * 1024 * 1024, compressedSize: 98 * 1024 * 1024, codec: 'H.264', status: 'compressing', progress: 76 },
     ]
+
     state.dynamicIslandInstance = new DynamicIsland({
       container: islandSlot,
       initialExpanded: state.islandExpanded,
@@ -593,6 +625,7 @@ function render(): void {
   // 2. Mount CompareSlider if on review screen
   if (state.screen === 'review' && !isDesktop) {
     const mount = document.querySelector<HTMLElement>('#review-compare-mount')
+
     if (mount) {
       state.compareSliderInstance = new CompareSlider({
         container: mount,
@@ -608,6 +641,7 @@ function render(): void {
 
   // 3. Mount StorageMeter if on review or options screen
   const storageMount = document.querySelector<HTMLElement>('#storage-meter-mount')
+
   if (storageMount && !isDesktop) {
     const approxInputGb = state.analysis?.totalBytes ? state.analysis.totalBytes / (1024 * 1024 * 1024) : 148.5
     const forecast = projectCodecSavings(approxInputGb, state.codec, state.mode)
@@ -625,6 +659,7 @@ function render(): void {
   // 4. Mount ImpactCertificate if on results screen
   if (state.screen === 'results' && !isDesktop) {
     const certMount = document.querySelector<HTMLElement>('#results-certificate-mount')
+
     if (certMount) {
       new ImpactCertificate({
         container: certMount,
@@ -654,14 +689,17 @@ function render(): void {
 
   // 5. Mount BatchActionBar if files selected
   const batchBarMount = document.querySelector<HTMLElement>('#batch-action-bar-mount')
+
   if (batchBarMount && !isDesktop && state.selectedFileIds.size > 0) {
     new BatchActionBar({
       container: batchBarMount,
       selectedCount: state.selectedFileIds.size,
       totalCount: sampleFiles.length,
       onApplyCodec: (cid) => {
-        state.codec = cid as CodecId
-        state.notice = `تم تطبيق ترميز ${getCodec(cid as CodecId).name} على الملفات المحددة`
+        // SAFETY: BatchActionBar provides verified CodecId strings
+        const codec = cid as CodecId
+        state.codec = codec
+        state.notice = `تم تطبيق ترميز ${getCodec(codec).name} على الملفات المحددة`
         render()
       },
       onApplyAspect: (aid) => {
@@ -682,6 +720,7 @@ function render(): void {
 
   // 6. Mount Modals (VideoTrimmer, AspectRatioStudio, ForensicProbeDrawer)
   const modalMount = document.querySelector<HTMLElement>('#modal-mount')
+
   if (modalMount && !isDesktop) {
     if (state.activeTrimmerFile) {
       new VideoTrimmer({
@@ -745,6 +784,7 @@ function startTimer(): void {
   progressTimer = setInterval(() => {
     if (state.screen !== 'progress' || state.paused) return
     state.progress = Math.min(100, state.progress + 1)
+
     if (state.progress === 100) {
       stopTimer()
       state.paused = true
@@ -766,14 +806,17 @@ function download(name: string, content: string, type: string): void {
 
 async function exportReport(format: string): Promise<void> {
   state.reportMenu = false
+
   if (isDesktop && (format === 'csv' || format === 'excel' || format === 'html')) {
     try {
       const content = await nativeReportContent(format === 'html' ? 'html' : 'csv')
       download(`mar2i-report.${format === 'html' ? 'html' : 'csv'}`, content, format === 'html' ? 'text/html' : 'text/csv;charset=utf-8;')
       render()
+
       return
     } catch (error) {
-      showError(error)
+      showError(error instanceof Error ? error : String(error))
+
       return
     }
   }
@@ -786,12 +829,14 @@ async function exportReport(format: string): Promise<void> {
   } else if (format === 'pdf') {
     window.print()
   }
+
   render()
 }
 
 async function selectOutputFolder(): Promise<void> {
   if (isDesktop) {
     const chosen = await pickDirectory()
+
     if (chosen) {
       state.outputPath = chosen
       state.outputName = chosen.split(/[\\/]/).filter(Boolean).at(-1) ?? chosen
@@ -807,50 +852,64 @@ async function pollNative(): Promise<void> {
   try {
     const current = await nativeStatus()
     state.batch = current
+
     if (!current.running && !current.paused) {
       if (current.completed + current.skipped + current.failed > 0 && !current.cancelled) {
         if (nativeTimer !== null) clearInterval(nativeTimer)
         nativeTimer = null
         changeScreen('results')
+
         return
       }
+
       if (current.cancelled || current.queued === 0) {
         if (nativeTimer !== null) clearInterval(nativeTimer)
         nativeTimer = null
       }
     }
+
     render()
   } catch (error) {
-    showError(error)
+    showError(error instanceof Error ? error : String(error))
   }
 }
 
 async function handleNativeAction(action: string): Promise<boolean> {
   if (action === 'select-source') {
     const chosen = await pickDirectory()
+
     if (chosen) {
       state.sourcePath = chosen
       state.sourceName = chosen.split(/[\\/]/).filter(Boolean).at(-1) ?? chosen
       state.analysis = null
       render()
     }
+
     return true
   }
+
   if (action === 'select-output') {
     await selectOutputFolder()
+
     return true
   }
+
   if (action === 'analyze') {
     if (!state.sourcePath) {
       showError('يرجى تحديد مجلد المصدر أولًا')
+
       return true
     }
+
     if (!state.outputPath) {
       showError('يرجى تحديد مجلد الحفظ أولًا')
+
       return true
     }
+
     state.notice = 'جارٍ تحليل الملفات وتوقع التوفير باستخدام FFprobe'
     render()
+
     try {
       const scan = await analyzeDirectory(state.sourcePath, state.outputPath, state.mode)
       state.analysis = scan
@@ -858,142 +917,197 @@ async function handleNativeAction(action: string): Promise<boolean> {
       state.notice = null
       changeScreen('review')
     } catch (error) {
-      showError(error)
+      showError(error instanceof Error ? error : String(error))
     }
+
     return true
   }
+
   if (action === 'start-preview') {
     if (!state.sourcePath || !state.outputPath || !state.analysis) {
       showError('يرجى تحليل الملفات أولًا')
+
       return true
     }
+
     try {
       await startNativeBatch(state.sourcePath, state.outputPath, state.mode, state.resource, state.codec)
       state.batch = null
       state.progressPage = 0
       state.notice = null
       changeScreen('progress')
+
       if (nativeTimer !== null) clearInterval(nativeTimer)
       nativeTimer = setInterval(() => { void pollNative() }, 900)
       void pollNative()
     } catch (error) {
-      showError(error)
+      showError(error instanceof Error ? error : String(error))
     }
+
     return true
   }
+
   if (action === 'pause-preview') {
     try {
       await nativeControl(state.batch?.paused ? 'resume' : 'pause')
       await pollNative()
     } catch (error) {
-      showError(error)
+      showError(error instanceof Error ? error : String(error))
     }
+
     return true
   }
+
   if (action === 'confirm-cancel') {
     state.dialog = null
+
     try {
       await nativeControl('cancel')
       await pollNative()
     } catch (error) {
-      showError(error)
+      showError(error instanceof Error ? error : String(error))
     }
+
     return true
   }
+
   if (action === 'open-results-folder') {
     try {
       await openNativeResults()
     } catch (error) {
-      showError(error)
+      showError(error instanceof Error ? error : String(error))
     }
+
     return true
   }
+
   return false
 }
 
 root.addEventListener('click', async (event) => {
+  // SAFETY: DOM click events in browser dispatch with an HTMLElement target
   const target = event.target as HTMLElement
   const nav = target.closest<HTMLElement>('[data-screen]')
+
   if (nav) {
+    // SAFETY: data-screen dataset value maps strictly to Screen union members
     changeScreen(nav.dataset.screen as Screen)
+
     return
   }
+
   const mode = target.closest<HTMLElement>('[data-mode]')
+
   if (mode) {
+    // SAFETY: data-mode dataset value maps strictly to Mode union members
     state.mode = mode.dataset.mode as Mode
     state.analysis = null
     state.notice = null
     render()
+
     return
   }
+
   const presetBtn = target.closest<HTMLElement>('[data-preset-id]')
+
   if (presetBtn) {
     const presetId = presetBtn.dataset.presetId
     const preset = ministryPresets.find((p) => p.id === presetId)
+
     if (preset) {
       state.mode = preset.mode
       state.codec = preset.codec
       state.help = preset.codec
       render()
     }
+
     return
   }
+
   const help = target.closest<HTMLElement>('[data-help]')
+
   if (help) {
+    // SAFETY: data-help dataset value maps strictly to CodecId union members
     state.help = help.dataset.help as CodecId
     render()
+
     return
   }
+
   const expand = target.closest<HTMLElement>('[data-expand]')
+
   if (expand) {
     state.expandedFile = state.expandedFile === expand.dataset.expand ? null : expand.dataset.expand!
     render()
+
     return
   }
+
   const exportButton = target.closest<HTMLElement>('[data-export]')
+
   if (exportButton) {
     void exportReport(exportButton.dataset.export!)
+
     return
   }
+
   const probeBtn = target.closest<HTMLElement>('[data-probe-file]')
+
   if (probeBtn) {
     state.activeProbeFile = probeBtn.dataset.probeFile ?? 'إرشادات الطواف.mp4'
     render()
+
     return
   }
+
   const selectAllCb = target.closest<HTMLInputElement>('#select-all-cb')
+
   if (selectAllCb) {
     if (state.selectedFileIds.size === sampleFiles.length) {
       state.selectedFileIds.clear()
     } else {
       state.selectedFileIds = new Set(sampleFiles.map((f) => f.name))
     }
+
     render()
+
     return
   }
+
   const fileSelectCb = target.closest<HTMLInputElement>('[data-file-select]')
+
   if (fileSelectCb) {
     const fileId = fileSelectCb.dataset.fileSelect!
+
     if (state.selectedFileIds.has(fileId)) {
       state.selectedFileIds.delete(fileId)
     } else {
       state.selectedFileIds.add(fileId)
     }
+
     render()
+
     return
   }
+
   const pageButton = target.closest<HTMLButtonElement>('[data-progress-prev], [data-progress-next]')
+
   if (pageButton && isDesktop) {
     const { page, pages } = progressPageWindow(state.batch?.jobs.length ?? 0, state.progressPage)
     state.progressPage = pageButton.hasAttribute('data-progress-next')
       ? Math.min(pages - 1, page + 1)
       : Math.max(0, page - 1)
     render()
+
     return
   }
+
   const action = target.closest<HTMLElement>('[data-action]')?.dataset.action
+
   if (!action) return
+
   if (isDesktop && (await handleNativeAction(action))) return
+
   switch (action) {
     case 'open-trimmer':
       state.activeTrimmerFile = 'إرشادات الطواف.mp4'
@@ -1045,6 +1159,7 @@ root.addEventListener('click', async (event) => {
         stopTimer()
         render()
       }
+
       break
     case 'cancel-preview':
       state.dialog = 'cancel'
@@ -1058,13 +1173,16 @@ root.addEventListener('click', async (event) => {
       break
     case 'confirm-output': {
       const value = document.querySelector<HTMLInputElement>('#output-directory-name')?.value.trim()
+
       if (value) {
         state.outputName = value
         state.dialog = null
         render()
       }
+
       break
     }
+
     case 'close-dialog':
       state.dialog = null
       render()
@@ -1086,13 +1204,16 @@ root.addEventListener('click', async (event) => {
 })
 
 root.addEventListener('change', (event) => {
+  // SAFETY: Form change events originate from input controls
   const target = event.target as HTMLInputElement
+
   if (target.id === 'source-picker' && target.files?.length) {
     const first = target.files[0]
     state.sourceName = first.webkitRelativePath.split('/')[0] || first.name
     state.sourceCount = [...target.files].filter((file) => /\.(mp4|mov|mkv|avi|webm|mxf|mts|m2ts)$/i.test(file.name)).length
     render()
   } else if (target.name === 'codec') {
+    // SAFETY: Radio input value is verified CodecId string
     state.codec = target.value as CodecId
     state.help = state.codec
     render()
@@ -1100,17 +1221,21 @@ root.addEventListener('change', (event) => {
     state.hardware = target.checked
     render()
   } else if (target.name === 'resource') {
+    // SAFETY: Radio input value is verified Resource string
     state.resource = target.value as Resource
     render()
   }
 })
 
 root.addEventListener('input', (event) => {
+  // SAFETY: Input events originate from text search input element
   const input = event.target as HTMLInputElement
+
   if (input.id === 'file-search') {
     state.search = input.value
     document.querySelector('#result-table-body')!.innerHTML = resultRows()
     const clear = document.querySelector<HTMLButtonElement>('[data-action="clear-search"]')
+
     if (clear) clear.hidden = !input.value
   }
 })

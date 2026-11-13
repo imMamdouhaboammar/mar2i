@@ -3,9 +3,11 @@ import { describe, expect, it } from 'bun:test'
 
 describe('Native desktop truthfulness', () => {
   it('shows no synthetic results, official certificate or invented throughput before a batch exists', async () => {
-    const win = window as typeof window & { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> } }
+    // SAFETY: Mocking Tauri internal IPC interface in test environment
+    const win = window as typeof window & { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<{ availableEncoders: string[]; recommendedH264: string | null; recommendedHevc: string | null }> } }
     win.__TAURI_INTERNALS__ = { invoke: async (cmd) => {
       if (cmd === 'report_content') throw new Error('Report not available')
+
       return { availableEncoders: [], recommendedH264: null, recommendedHevc: null }
     } }
     document.body.innerHTML = '<div id="app"></div>'
@@ -17,8 +19,12 @@ describe('Native desktop truthfulness', () => {
     expect(document.querySelector('.results-table')?.textContent).not.toContain('إرشادات الطواف.mp4')
 
     let downloads = 0
-    URL.createObjectURL = () => { downloads++; return 'blob:local-test' }
+    URL.createObjectURL = () => { downloads++;
+
+ return 'blob:local-test' }
+
     URL.revokeObjectURL = () => {}
+
     document.querySelector<HTMLButtonElement>('[data-action="toggle-report-menu"]')?.click()
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(document.querySelector('[data-export="csv"]')).not.toBeNull()

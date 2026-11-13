@@ -16,6 +16,7 @@ describe('compression choice copy', () => {
   test('all six choices have distinct explanatory trade-offs', () => {
     expect(codecs).toHaveLength(6)
     expect(new Set(codecs.map((codec) => codec.id)).size).toBe(6)
+
     for (const codec of codecs) {
       expect(codec.description.length).toBeGreaterThan(20)
       expect(codec.caveat.length).toBeGreaterThan(20)

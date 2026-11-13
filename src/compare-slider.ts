@@ -204,8 +204,9 @@ export class CompareSlider {
   private attachEvents(): void {
     if (!this.sliderHandle || !this.afterLayer) return
 
-    const wrapper = this.container.querySelector('.compare-wrapper') as HTMLElement
-    const loupe = this.container.querySelector('#compare-loupe') as HTMLElement
+    const wrapper = this.container.querySelector<HTMLElement>('.compare-wrapper')
+    const loupe = this.container.querySelector<HTMLElement>('#compare-loupe')
+
     if (!wrapper) return
 
     // Scene pill click events
@@ -243,8 +244,9 @@ export class CompareSlider {
         loupe.style.left = `${x}px`
         loupe.style.top = `${y}px`
 
-        const beforeImg = loupe.querySelector('.loupe-preview-before img') as HTMLElement
-        const afterImg = loupe.querySelector('.loupe-preview-after img') as HTMLElement
+        const beforeImg = loupe.querySelector<HTMLElement>('.loupe-preview-before img')
+        const afterImg = loupe.querySelector<HTMLElement>('.loupe-preview-after img')
+
         if (beforeImg && afterImg) {
           const factor = 2.5
           const imgX = -(x * factor - 60)
@@ -256,7 +258,7 @@ export class CompareSlider {
     }
 
     const onPointerDown = (e: PointerEvent) => {
-      if ((e.target as HTMLElement).closest('#compare-loupe') && this.isLoupeActive) return
+      if (e.target instanceof HTMLElement && e.target.closest('#compare-loupe') && this.isLoupeActive) return
       this.isDragging = true
       wrapper.setPointerCapture(e.pointerId)
       this.updateFromPointer(e, wrapper)
@@ -270,6 +272,7 @@ export class CompareSlider {
     const onPointerUp = (e: PointerEvent) => {
       if (!this.isDragging) return
       this.isDragging = false
+
       try {
         wrapper.releasePointerCapture(e.pointerId)
       } catch {}
@@ -283,6 +286,7 @@ export class CompareSlider {
     // Keyboard accessibility for handle
     this.sliderHandle.addEventListener('keydown', (e: KeyboardEvent) => {
       let step = 1
+
       if (e.shiftKey) step = 10
 
       if (e.key === 'ArrowLeft') {

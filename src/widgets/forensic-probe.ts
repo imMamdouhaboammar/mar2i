@@ -56,16 +56,19 @@ export class ForensicProbeDrawer {
     const units = ['B', 'KB', 'MB', 'GB', 'TB']
     let val = bytes
     let u = 0
+
     while (val >= 1024 && u < units.length - 1) {
       val /= 1024
       u++
     }
+
     return `${val.toFixed(val < 10 && u > 0 ? 1 : 0)} ${units[u]}`
   }
 
   private formatDuration(seconds: number): string {
     const mins = Math.floor(seconds / 60)
     const secs = Math.floor(seconds % 60)
+
     return `${mins} دقيقة و ${secs} ثانية`
   }
 
@@ -295,8 +298,11 @@ export class ForensicProbeDrawer {
     const tabBtns = this.container.querySelectorAll<HTMLButtonElement>('.forensic-tab-btn')
     tabBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
-        const tab = btn.getAttribute('data-tab') as TabKey
-        if (tab) this.setTab(tab)
+        const tab = btn.getAttribute('data-tab')
+
+        if (tab === 'container' || tab === 'video' || tab === 'audio' || tab === 'integrity' || tab === 'metadata') {
+          this.setTab(tab)
+        }
       })
     })
 

@@ -57,11 +57,17 @@ export class DynamicIsland {
 
   public update(partial: Partial<DynamicIslandOptions>): void {
     if (partial.isProcessing !== undefined) this.isProcessing = partial.isProcessing
+
     if (partial.isPaused !== undefined) this.isPaused = partial.isPaused
+
     if (partial.progress !== undefined) this.progress = partial.progress
+
     if (partial.keepAwakeActive !== undefined) this.keepAwakeActive = partial.keepAwakeActive
+
     if (partial.throughputRate !== undefined) this.throughputRate = partial.throughputRate
+
     if (partial.queue !== undefined) this.queue = [...partial.queue]
+
     if (partial.initialExpanded !== undefined) this.isExpanded = partial.initialExpanded
     this.render()
   }
@@ -78,10 +84,12 @@ export class DynamicIsland {
     const units = ['B', 'KB', 'MB', 'GB', 'TB']
     let val = bytes
     let u = 0
+
     while (val >= 1024 && u < units.length - 1) {
       val /= 1024
       u++
     }
+
     return `${val.toFixed(val < 10 && u > 0 ? 1 : 0)} ${units[u]}`
   }
 
@@ -275,12 +283,14 @@ export class DynamicIsland {
       btn.addEventListener('click', (e) => {
         e.stopPropagation()
         const id = btn.getAttribute('data-item-id')
+
         if (id) this.options.onItemAction?.(id, 'inspect')
       })
     })
 
     // Drag & Drop handling on the Island
     const dropStrip = this.container.querySelector<HTMLElement>('.island-drop-strip')
+
     if (dropStrip) {
       dropStrip.addEventListener('dragover', (e) => {
         e.preventDefault()
@@ -292,6 +302,7 @@ export class DynamicIsland {
       dropStrip.addEventListener('drop', (e) => {
         e.preventDefault()
         dropStrip.classList.remove('drag-active')
+
         if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
           const files = Array.from(e.dataTransfer.files)
           this.options.onFilesDropped?.(files)
