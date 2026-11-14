@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "aa95b5fa-598e-4ae4-bfe5-a477ce90af3c",
+  "created_at": "2026-11-11T18:05:30+00:00",
+  "title": "Subprocess Pipe Buffer Exhaustion on Long Transcodes",
+  "symptom": "FFmpeg child process hangs indefinitely after processing large ProRes batch",
+  "hypotheses": [
+    {
+      "id": "H-1",
+      "claim": "Stdio pipe buffer exhaustion blocks child process write",
+      "discriminating_test": "Drain stderr in concurrent thread vs synchronous wait",
+      "created_at": "2026-11-11T18:05:49+00:00"
+    },
+    {
+      "id": "H-2",
+      "claim": "Host system file descriptor exhaustion",
+      "discriminating_test": "Monitor lsof fd limits during batch execution",
+      "created_at": "2026-11-11T18:05:49+00:00"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "E-1",
+      "hypothesis": "H-1",
+      "kind": "observation",
+      "effect": "supports",
+      "note": "FFmpeg process hangs when stderr exceeds 64KB buffer on macOS; reading stderr continuously resolves hang",
+      "source": "/Users/mamdouhaboammar/Documents/M-Research/mar2i/core/src/runner.rs",
+      "sha256": "267c5a0eddc5d843a66da05551987b4e336e87f391a38d011ca2ddee79a4779d",
+      "created_at": "2026-11-11T18:05:56+00:00"
+    }
+  ],
+  "experiments": []
+}
