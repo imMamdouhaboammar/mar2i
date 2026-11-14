@@ -1,0 +1,144 @@
+{
+  "version": "1.0",
+  "title": "Mar2i — Bulk Video Compression & Archival System",
+  "domain": "software",
+  "intent": {
+    "problem": "Saudi Ministry of Hajj & Umrah media operations handle massive volumes of high-bitrate video footage across Hajj and Umrah seasons under strict storage, network, and privacy constraints. Media processing must remain 100% offline, original files must never be modified, and archival/publishing integrity must be guaranteed.",
+    "desired_outcome": "Offline desktop bulk video compression and archival for Saudi Ministry of Hajj & Umrah media operations.",
+    "actor": "Saudi Ministry of Hajj & Umrah media operations team and archive custodians"
+  },
+  "status": "ready",
+  "scope": {
+    "in": [
+      "Offline desktop hybrid application built with Tauri v2, Rust core (mar2i-core), SQLite WAL job queue, and TypeScript/Vite RTL UI",
+      "Safe directory discovery rejecting symlinks, preventing directory traversal, and validating canonical root boundaries",
+      "Dual processing modes: Publish Mode (H.264/MP4, SSIM >= 0.965 quality gate, copy-through for already efficient codecs) and Archive Mode (lossless FFV1/MKV with decoded-frame hash verification framemd5, byte-copy with SHA-256 for non-raw assets)",
+      "Strict hardware acceleration policy separation: GPU hardware acceleration allowed only for Publish mode; deterministic, reproducible CPU encoding mandated for Archive mode",
+      "Zero-leak RAII OS Sleep Inhibitor (KeepAwake) preventing workstation sleep during long-running batch jobs",
+      "Stratified multi-sample empirical size estimation predicting GB savings before transcoding begins",
+      "Read-only original media guarantee: source files are immutable sacred archives",
+      "SQLite WAL persistent queue with pause, resume, and cancellation across worker crashes",
+      "Exportable audit reports in CSV and HTML formats with SHA-256 and SSIM proof metrics",
+      "Optional local read-only MCP stdio interface strictly constrained to MAR2I_MCP_ALLOWED_ROOTS"
+    ],
+    "out": [
+      "Cloud-based transcoding, external storage uploads, remote database sync, or third-party telemetry sinks (strictly 100% offline)",
+      "In-place mutation or deletion of source media files",
+      "Lossy re-encoding of HDR streams, non-AAC multichannel audio, or complex subtitle tracks in Publish mode",
+      "Unconstrained filesystem access or write permissions for MCP tools"
+    ],
+    "constraints": [
+      "100% local, air-gapped / offline operation — zero network egress or telemetry",
+      "Read-only source media contract: input files must never be modified, moved, or deleted",
+      "Hardware acceleration discipline: GPU for speed in publishing; CPU for exact mathematical determinism in archival",
+      "Never overwrite destination files without explicit operator consent; reject 0-byte or oversized outputs",
+      "Bun package manager mandatory for JavaScript/TypeScript; Rust edition 2024; Tauri v2 IPC architecture",
+      "Arabic RTL primary layout; WCAG 2.2 accessibility standards"
+    ]
+  },
+  "knowledge": {
+    "facts": [
+      "Video files from Hajj seasons span diverse containers (MOV, MP4, MKV, AVI) and codecs (ProRes, DNxHD, H.264, HEVC)",
+      "Tauri v2 IPC bridges the TypeScript WebView to the native Rust engine mar2i-core",
+      "FFmpeg and ffprobe binaries are required locally for stream inspection and transcoding",
+      "framemd5 ensures lossless decoded-frame equality between raw sources and FFV1 archives",
+      "SQLite in WAL mode ensures atomic, crash-resilient queue persistence across process crashes"
+    ],
+    "assumptions": [
+      "Operator machines have sufficient local or attached storage for transcoded output files",
+      "Operator workstations run modern macOS or Windows environments with multi-core CPUs",
+      "GPU hardware encoding drivers may exhibit slight frame discrepancies across vendors, reinforcing the CPU-only policy for archival"
+    ],
+    "unknowns": [
+      "Exact percentage of legacy interlaced footage vs progressive footage in Ministry archive backlog",
+      "Thermal limits of field laptops during multi-hour continuous batches in hot field environments"
+    ]
+  },
+  "decisions": [
+    {
+      "decision": "Strict hardware acceleration separation: GPU for Publish, CPU for Archive",
+      "rationale": "GPU encoders lack bit-exact determinism across drivers; archival requires mathematically reproducible frames",
+      "reversible": false
+    },
+    {
+      "decision": "Verification threshold SSIM >= 0.965 for Publish mode",
+      "rationale": "Guarantees indistinguishable visual fidelity for broadcast and social distribution",
+      "reversible": true
+    },
+    {
+      "decision": "SQLite WAL queue persistence",
+      "rationale": "Crash resilience and zero database locking contention between UI polling and worker transcode threads",
+      "reversible": false
+    },
+    {
+      "decision": "Read-only source media contract",
+      "rationale": "Protects irreplaceable historical religious and cultural footage from accidental destruction",
+      "reversible": false
+    },
+    {
+      "decision": "Stdio-only MCP interface with path grants",
+      "rationale": "Prevents unauthorized filesystem exposure while enabling local AI workflow integration",
+      "reversible": true
+    }
+  ],
+  "open_decisions": [],
+  "workstreams": [
+    {
+      "name": "Core Engine (mar2i-core)",
+      "outcome": "Safe discovery, ffprobe media inspection, policy engine, runner, SQLite queue, worker, and reporter",
+      "dependencies": []
+    },
+    {
+      "name": "Desktop Shell (src-tauri)",
+      "outcome": "Tauri v2 IPC bridge, sleep inhibitor, and FFmpeg bundle discovery",
+      "dependencies": ["Core Engine (mar2i-core)"]
+    },
+    {
+      "name": "Frontend Application (src)",
+      "outcome": "Arabic RTL UI, reactive batch progress, codec options cards, and A/B visual preview",
+      "dependencies": ["Desktop Shell (src-tauri)"]
+    },
+    {
+      "name": "Verification & Security Architecture",
+      "outcome": "Zero-mock integration tests, SSIM gate checks, framemd5 verification, and threat model mitigations",
+      "dependencies": ["Core Engine (mar2i-core)", "Desktop Shell (src-tauri)"]
+    }
+  ],
+  "deliverables": [
+    "core/ — Production Rust crate mar2i-core with discovery, media probe, policy, runner, queue, worker, and report modules",
+    "src-tauri/ — Native Tauri v2 desktop application shell with IPC command routing and RAII sleep inhibitor",
+    "src/ — Accessible Arabic RTL-first TypeScript/Vite UI with real-time job monitoring and visual comparison",
+    "docs/security/THREAT_MODEL.md — STRIDE security evaluation and attack surface inventory",
+    "docs/gtd/EXECUTION_BRIEF.md & docs/gtd/execution-brief.json — Formal GTD work model and schema specification",
+    "docs/investigations/CASE_LEDGER.md — Deep Digger causal investigation protocol and case ledger"
+  ],
+  "risks": [
+    "Host system sleep or thermal throttling interrupting multi-hour batches (mitigated by RAII KeepAwake and resource profiles)",
+    "Video container edge cases (VFR, rotational metadata, corrupt moov atoms) causing transcode stalls (mitigated by ffprobe preflight)",
+    "Storage exhaustion mid-batch when compressing massive 4K raw archives (mitigated by stratified size prediction and disk headroom check)"
+  ],
+  "domain_data": {
+    "repository": "https://github.com/imMamdouhaboammar/mar2i",
+    "runtime": "Tauri v2 (macOS/Windows/Linux), Bun 1.1+, Rust 2024, FFmpeg 6+",
+    "interfaces": ["Tauri IPC (analyze_directory, start_batch, control_batch, batch_status)", "Local MCP stdio tools", "CSV/HTML audit reports"],
+    "security": "100% offline, symlink rejection, path canonicalization, formula injection escaping, no shell command execution"
+  },
+  "verification": {
+    "success_criteria": [
+      "All Rust core integration tests pass cleanly (cargo test --manifest-path core/Cargo.toml)",
+      "All TypeScript unit tests pass cleanly (bun test)",
+      "SSIM evaluation correctly gates publish encoding and rejects outputs below 0.965",
+      "Archive mode validates lossless frame identity via framemd5 on FFV1 transcode",
+      "Discovery engine rejects symlinks and directory traversal attacks",
+      "MCP server denies filesystem access outside MAR2I_MCP_ALLOWED_ROOTS"
+    ],
+    "evidence": [
+      "core/tests/ unit and integration test outputs with 100% green assertions",
+      "src/data.test.ts test results",
+      "docs/security/THREAT_MODEL.md verified controls",
+      "Verified execution brief schema validation output (gtd validate-brief)"
+    ]
+  },
+  "next_action": "Execute end-to-end batch transcode validation tests and audit report generation",
+  "blockers": []
+}
