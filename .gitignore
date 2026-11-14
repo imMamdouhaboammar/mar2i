@@ -27,6 +27,7 @@ pnpm-debug.log*
 .vscode/*
 !.vscode/extensions.json
 .idea/
+.cursor/
 .DS_Store
 *.suo
 *.ntvs*
@@ -34,6 +35,27 @@ pnpm-debug.log*
 *.sln
 *.sw?
 Thumbs.db
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+*.pfx
+*.p12
+
+# Agent harness state and local symlinked skills
+.fable/
+.ponytail
+.agents/skills/*
+!.agents/skills/mar2i-ops/
+
+# Caches and test coverage
+coverage/
+.cache/
+*.tsbuildinfo
 
 # Runtime database written by the app into the output folder (never in-repo)
 .mar2i/
