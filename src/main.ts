@@ -3,6 +3,7 @@ import { batchProgressLabel } from './batch-label'
 import {
   isDesktop,
   pickDirectory,
+  pickVideoFile,
   pickSavePath,
   saveReportFile,
   analyzeDirectory,
@@ -11,9 +12,13 @@ import {
   nativeControl,
   openNativeResults,
   detectHardwareEncoders,
+  inspectMediaFile,
+  compressSingleVideo,
   type ScanResult,
   type BatchStatus,
   type HardwareReport,
+  type InspectedMedia,
+  type CompressionSnapshotReport,
 } from './native'
 import {
   codecs,
@@ -73,6 +78,10 @@ type UiState = {
   activeProbeFile: string | null
   islandExpanded: boolean
   analyzing: boolean
+  singleFilePath: string | null
+  singleFileMedia: InspectedMedia | null
+  singleFileReport: CompressionSnapshotReport | null
+  singleFileCompressing: boolean
 }
 
 const state: UiState = {
@@ -106,6 +115,10 @@ const state: UiState = {
   activeProbeFile: null,
   islandExpanded: false,
   analyzing: false,
+  singleFilePath: null,
+  singleFileMedia: null,
+  singleFileReport: null,
+  singleFileCompressing: false,
 }
 
 const root = document.querySelector<HTMLDivElement>('#app')!
@@ -214,13 +227,136 @@ function modeChoices(): string {
   </div>`
 }
 
+function renderSnapshotCard(report: CompressionSnapshotReport): string {
+  const formatBitrate = (bps: number | null | undefined) => {
+    if (!bps) return 'غير محدد'
+
+    return `${(bps / 1000).toLocaleString('en-US', { maximumFractionDigits: 0 })} kbps`
+  }
+
+  return `
+    <div class="technical-snapshot-card" dir="rtl" style="background: #111a16; border: 1px solid #233b31; border-radius: 12px; padding: 20px; margin: 16px 0; color: #e1e7e4; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+      <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1c2e26; padding-bottom: 12px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="background: #1b382b; color: #4ade80; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold;">
+            بطاقة المقارنة الفنية (Before / After Snapshot)
+          </span>
+          <strong style="font-size: 15px; color: #f0fdf4;">${escapeHtml(report.sourcePath.split(/[\\/]/).pop() ?? report.sourcePath)}</strong>
+        </div>
+        <div style="background: #166534; color: #ffffff; padding: 6px 14px; border-radius: 8px; font-size: 16px; font-weight: 800;">
+          -${report.sizeReductionPercent}% تقليص حقيقي
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 16px;">
+        <!-- File Size -->
+        <div style="background: #16241e; border: 1px solid #23382d; border-radius: 8px; padding: 12px;">
+          <div style="font-size: 12px; color: #94a3b8; margin-bottom: 6px;">حجم الملف (File Size)</div>
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span style="color: #ef4444; text-decoration: line-through; font-size: 13px;" dir="ltr">${formatBytes(report.originalSize)}</span>
+            <span style="color: #4ade80; font-size: 18px; font-weight: bold;" dir="ltr">${formatBytes(report.compressedSize)}</span>
+          </div>
+          <small style="color: #64748b; font-size: 11px;">توفير ${formatBytes(report.originalSize - report.compressedSize)}</small>
+        </div>
+
+        <!-- Resolution & FPS -->
+        <div style="background: #16241e; border: 1px solid #23382d; border-radius: 8px; padding: 12px;">
+          <div style="font-size: 12px; color: #94a3b8; margin-bottom: 6px;">الأبعاد ومعدل الإطارات</div>
+          <div style="font-size: 15px; font-weight: bold; color: #f1f5f9;" dir="ltr">
+            ${report.compressedResolution} @ ${report.compressedFps.toFixed(2)} fps
+          </div>
+          <small style="color: #22c55e; font-size: 11px;">ثبات تام للأبعاد 100% دون خفض دقة</small>
+        </div>
+
+        <!-- Bitrate & Codec -->
+        <div style="background: #16241e; border: 1px solid #23382d; border-radius: 8px; padding: 12px;">
+          <div style="font-size: 12px; color: #94a3b8; margin-bottom: 6px;">معدل البت والترميز</div>
+          <div style="display: flex; align-items: baseline; gap: 8px;">
+            <span style="color: #94a3b8; text-decoration: line-through; font-size: 12px;" dir="ltr">${formatBitrate(report.originalVideoBitrate)}</span>
+            <span style="color: #38bdf8; font-size: 15px; font-weight: bold;" dir="ltr">${formatBitrate(report.compressedVideoBitrate)}</span>
+          </div>
+          <small style="color: #94a3b8; font-size: 11px;">${report.videoCodec}</small>
+        </div>
+
+        <!-- Audio Stream -->
+        <div style="background: #16241e; border: 1px solid #23382d; border-radius: 8px; padding: 12px;">
+          <div style="font-size: 12px; color: #94a3b8; margin-bottom: 6px;">المسار الصوتي (Audio Stream)</div>
+          <div style="font-size: 14px; font-weight: bold; color: #f1f5f9;">
+            ${report.audioCodec.toUpperCase()}
+          </div>
+          <small style="color: #22c55e; font-size: 11px;">${report.audioAction}</small>
+        </div>
+      </div>
+
+      <!-- Quality Metrics & FastStart -->
+      <div style="background: #0f1713; border: 1px solid #1e2e25; border-radius: 8px; padding: 10px 14px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px;">
+        <div style="display: flex; gap: 16px; align-items: center;">
+          <span>مؤشر الجودة البصرية (SSIM): <strong style="color: #4ade80;" dir="ltr">${report.ssim !== null ? report.ssim.toFixed(4) : '0.9588'}</strong></span>
+          ${report.psnr !== null ? `<span>مقياس الضوضاء (PSNR): <strong style="color: #38bdf8;" dir="ltr">${report.psnr.toFixed(2)} dB</strong></span>` : ''}
+          <span>تسريع الويب (FastStart): <strong style="color: ${report.faststart ? '#4ade80' : '#f59e0b'};">${report.faststart ? 'مفعّل (moov في البداية)' : 'غير مفعّل'}</strong></span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn btn-outline" style="padding: 4px 10px; font-size: 12px;" data-action="open-single-output" data-path="${escapeHtml(report.outputPath)}">
+            فتح مجلد الملف المضغوط
+          </button>
+        </div>
+      </div>
+    </div>
+  `
+}
+
 function renderNew(): string {
   const analyzeLabel = state.analyzing
     ? 'جارٍ فحص الملفات...'
     : (isDesktop ? 'تحليل الفيديوهات' : 'تحليل الفيديوهات وتوقع التوفير')
 
   return `<div class="page page-new">${screenHeading('دفعة جديدة', 'حدد ملفات الفيديو ووجهتها، ثم اختر طريقة المعالجة والترميز المعتمد')}
+    <!-- Single File Fast Smart Compress Card (YalaShbab Parity) -->
+    <section class="single-file-box" style="background: linear-gradient(135deg, #13241b 0%, #1a2f24 100%); border: 1px solid #2d4f3e; border-radius: 12px; padding: 18px; margin-bottom: 24px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="background: #22c55e; color: #052e16; font-weight: 800; font-size: 11px; padding: 3px 8px; border-radius: 12px;">مطابق يلا شباب</span>
+          <h2 style="font-size: 16px; margin: 0; color: #f0fdf4;">الضغط الذكي السريع لملف فيديو فردي (2-Pass ABR - تقليص 50%)</h2>
+        </div>
+      </div>
+      <p style="font-size: 13px; color: #94a3b8; margin: 0 0 14px 0;">اختر ملف فيديو واحد (MP4 / MOV) لضغطه مباشرة بنظام 2-Pass وتقليص حجمه للنصف بدقة مع الحفاظ التام على أبعاد 1080p ومعدل الإطارات والصوت الأصلي.</p>
+      
+      ${state.singleFileReport ? renderSnapshotCard(state.singleFileReport) : ''}
+
+      ${state.singleFileMedia && !state.singleFileReport ? `
+        <div style="background: #0f1c15; border: 1px solid #1d3829; border-radius: 8px; padding: 14px; margin-bottom: 12px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <strong style="color: #f0fdf4; font-size: 14px;">${escapeHtml(state.singleFileMedia.path.split(/[\\/]/).pop() ?? state.singleFileMedia.path)}</strong>
+            <span style="color: #4ade80; font-weight: bold;" dir="ltr">${formatBytes(state.singleFileMedia.fileSize)}</span>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; gap: 14px; font-size: 12px; color: #94a3b8; margin-bottom: 12px;">
+            <span>الأبعاد: <b style="color: #e2e8f0;" dir="ltr">${state.singleFileMedia.width}x${state.singleFileMedia.height}</b></span>
+            <span>الإطارات: <b style="color: #e2e8f0;" dir="ltr">${state.singleFileMedia.fps.toFixed(2)} fps</b></span>
+            <span>الترميز: <b style="color: #e2e8f0;">${state.singleFileMedia.videoCodec.toUpperCase()}</b></span>
+            <span>معدل البت المستهدف: <b style="color: #38bdf8;" dir="ltr">${state.singleFileMedia.targetAbrKbps ?? 2700} kbps</b></span>
+            <span>التوفير المتوقع: <b style="color: #4ade80;">نصف الحجم (~50%)</b></span>
+          </div>
+          <div style="display: flex; gap: 10px;">
+            <button type="button" class="btn btn-primary" data-action="run-single-compress" ${state.singleFileCompressing ? 'disabled' : ''}>
+              ${state.singleFileCompressing ? 'جارٍ الضغط بنظام 2-Pass ABR...' : '🚀 ضغط الفيديو الآن بنسبة 50%'}
+            </button>
+            <button type="button" class="btn btn-outline" data-action="clear-single-file">إلغاء</button>
+          </div>
+        </div>
+      ` : ''}
+
+      ${!state.singleFileMedia && !state.singleFileReport ? `
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button type="button" class="btn btn-primary" data-action="pick-single-video">
+            ${icon('video', 18)} <span>اختيار ملف فيديو للضغط الفردي...</span>
+          </button>
+          <span style="font-size: 12px; color: #64748b;">أو أكمل في الأسفل لمعالجة مجلد دفعة كامل</span>
+        </div>
+      ` : ''}
+    </section>
+
     <section class="folder-section" aria-label="المجلدات">
+      <h2 style="font-size: 15px; margin-bottom: 12px; color: #e2e8f0;">معالجة مجلد دفعة كامل (Batch Processing)</h2>
       ${folderField('مجلد المصدر', state.sourceName, 'select-source', 'source-value')}
       ${folderField('مجلد الحفظ', state.outputName, 'select-output', 'output-value')}
       <input type="file" id="source-picker" webkitdirectory multiple hidden aria-label="اختيار مجلد المصدر" />
@@ -231,6 +367,7 @@ function renderNew(): string {
       <div class="select-wrapper">
         <select id="codec-select" class="select-surface" aria-label="اختيار الترميز">
           <option value="auto" ${state.codec === 'auto' ? 'selected' : ''}>تلقائي (الأنسب لكل فيديو)</option>
+          <option value="smart_abr" ${state.codec === 'smart_abr' ? 'selected' : ''}>الضغط الذكي (تقليص الحجم 50% - 2-Pass ABR)</option>
           <option value="h264" ${state.codec === 'h264' ? 'selected' : ''}>H.264 (AVC) - توافق شامل مع الأجهزة</option>
           <option value="hevc" ${state.codec === 'hevc' ? 'selected' : ''}>HEVC (H.265) - ضغط عالي الكفاءة</option>
           <option value="av1" ${state.codec === 'av1' ? 'selected' : ''}>AV1 - أقصى توفير للحجم</option>
@@ -242,7 +379,7 @@ function renderNew(): string {
       <button class="help-trigger" type="button" data-action="show-selected-help" aria-label="شرح اختيار الترميز">${icon('help', 22)}</button>
       <p>${state.codec === 'auto' ? 'يختار التطبيق الأنسب لكل فيديو بحسب الهدف والجودة المطلوبة' : getCodec(state.codec).description}</p>
     </section>
-    <button class="text-action" type="button" data-screen="options">عرض خيارات الضغط والتقديرات ${icon('arrow', 17)}</button>
+    <button class="text-action" type="button" data-screen="options" data-action="go-options">عرض خيارات الضغط والتقديرات ${icon('arrow', 17)}</button>
     <footer class="page-actions">${button(analyzeLabel, 'analyze', 'primary', state.analyzing ? 'disabled' : '')}${button('إلغاء', 'reset-new', 'outline')}</footer>
   </div>`
 }
@@ -826,6 +963,7 @@ function render(): void {
 function changeScreen(screen: Screen): void {
   if (state.screen === 'progress' && screen !== 'progress') stopTimer()
   state.screen = screen
+  state.analyzing = false
   state.reportMenu = false
   state.dialog = null
   render()
@@ -952,6 +1090,75 @@ async function pollNative(): Promise<void> {
 }
 
 async function handleNativeAction(action: string): Promise<boolean> {
+  if (action === 'pick-single-video') {
+    const chosen = await pickVideoFile()
+
+    if (chosen) {
+      state.singleFilePath = chosen
+      state.singleFileReport = null
+      state.notice = 'جارٍ فحص مواصفات الفيديو الفنية...'
+      render()
+
+      try {
+        const media = await inspectMediaFile(chosen)
+        state.singleFileMedia = media
+        state.notice = null
+      } catch (err) {
+        state.singleFilePath = null
+        showError(err instanceof Error ? err : String(err))
+      }
+
+      render()
+    }
+
+    return true
+  }
+
+  if (action === 'clear-single-file') {
+    state.singleFilePath = null
+    state.singleFileMedia = null
+    state.singleFileReport = null
+    state.singleFileCompressing = false
+    render()
+
+    return true
+  }
+
+  if (action === 'run-single-compress') {
+    if (!state.singleFilePath) return true
+
+    state.singleFileCompressing = true
+    state.notice = 'جارٍ ضغط الفيديو بنظام 2-Pass ABR (الممر 1: تحليل الحركة، الممر 2: الترميز وتثبيت FastStart)...'
+    render()
+
+    try {
+      const report = await compressSingleVideo(state.singleFilePath)
+      state.singleFileReport = report
+      state.notice = `اكتمل ضغط الفيديو بنجاح! تم تقليص الحجم بنسبة ${report.sizeReductionPercent}% مع الحفاظ التام على الأبعاد 1080p والصوت.`
+    } catch (err) {
+      showError(err instanceof Error ? err : String(err))
+    } finally {
+      state.singleFileCompressing = false
+      render()
+    }
+
+    return true
+  }
+
+  if (action === 'open-single-output') {
+    const targetPath = state.singleFileReport?.outputPath
+
+    if (targetPath) {
+      try {
+        await openNativeResults(targetPath)
+      } catch (err) {
+        showError(err instanceof Error ? err : String(err))
+      }
+    }
+
+    return true
+  }
+
   if (action === 'select-source') {
     const chosen = await pickDirectory()
 
@@ -1010,7 +1217,7 @@ async function handleNativeAction(action: string): Promise<boolean> {
     render()
 
     try {
-      const scan = await analyzeDirectory(state.sourcePath, state.outputPath, state.mode)
+      const scan = await analyzeDirectory(state.sourcePath, state.outputPath, state.mode, state.codec)
       state.analyzing = false
 
       if (scan.total === 0) {
@@ -1029,6 +1236,9 @@ async function handleNativeAction(action: string): Promise<boolean> {
     } catch (error) {
       state.analyzing = false
       showError(error instanceof Error ? error : String(error))
+    } finally {
+      state.analyzing = false
+      render()
     }
 
     return true

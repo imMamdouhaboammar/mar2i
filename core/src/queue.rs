@@ -109,7 +109,19 @@ impl BatchQueue {
                     lock_path.display()
                 )
             })?;
-        file.try_lock().map_err(|error| {
+        // On macOS/Unix, closing an fd might take a few microseconds for the kernel VFS
+        // to release the advisory flock. Retry briefly if WouldBlock.
+        let mut locked = file.try_lock();
+        if locked.is_err() {
+            for _ in 0..10 {
+                std::thread::sleep(Duration::from_millis(5));
+                locked = file.try_lock();
+                if locked.is_ok() {
+                    break;
+                }
+            }
+        }
+        locked.map_err(|error| {
             anyhow::anyhow!(
                 "batch is already active in another process or cannot be locked: {error}"
             )
@@ -323,6 +335,15 @@ impl BatchQueue {
             [],
         )?;
         self.cleanup_registered_partials(&connection)?;
+        Ok(count)
+    }
+
+    pub fn reset_skipped(&self) -> Result<usize> {
+        let connection = self.connect()?;
+        let count = connection.execute(
+            "UPDATE jobs SET status='queued', reason=NULL, output=NULL, output_bytes=NULL, quality=NULL, elapsed_ms=NULL WHERE status='skipped'",
+            [],
+        )?;
         Ok(count)
     }
 
