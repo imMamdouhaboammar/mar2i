@@ -185,7 +185,10 @@ fn command_line() -> Result<()> {
                             codec, container, ..
                         } => format!("ENCODE: {codec} -> {container}"),
                         Decision::EncodeAbr {
-                            codec, container, target_kbps, ..
+                            codec,
+                            container,
+                            target_kbps,
+                            ..
                         } => format!("ENCODE_ABR: {codec} -> {container} @ {target_kbps}kbps"),
                         Decision::Skip { ref reason } => format!("SKIP: {reason}"),
                     };

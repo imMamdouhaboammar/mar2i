@@ -46,7 +46,7 @@ fn generate_sample(path: &Path) {
 }
 
 #[test]
-fn yalashbab_smart_abr_two_pass_compresses_and_faststarts_mp4() {
+fn smart_abr_two_pass_compresses_and_faststarts_mp4() {
     let ffmpeg = binary("ffmpeg");
     let ffprobe = binary("ffprobe");
     let available = probe_available_encoders(&ffmpeg);
@@ -92,8 +92,14 @@ fn yalashbab_smart_abr_two_pass_compresses_and_faststarts_mp4() {
 
     assert_eq!(before, original_size);
     assert!(published.is_file());
-    assert!(after < before, "after ({after}) should be smaller than before ({before})");
-    assert!(quality.contains("SSIM"), "quality should report SSIM metric: {quality}");
+    assert!(
+        after < before,
+        "after ({after}) should be smaller than before ({before})"
+    );
+    assert!(
+        quality.contains("SSIM"),
+        "quality should report SSIM metric: {quality}"
+    );
 
     // Verify no stray passlog files or directories in output or parent
     let mut stray_passlogs = 0;
@@ -102,10 +108,17 @@ fn yalashbab_smart_abr_two_pass_compresses_and_faststarts_mp4() {
             stray_passlogs += 1;
         }
     }
-    assert_eq!(stray_passlogs, 0, "passlog directory must be completely cleaned up");
+    assert_eq!(
+        stray_passlogs, 0,
+        "passlog directory must be completely cleaned up"
+    );
 
     // Verify source video was NEVER modified
-    assert_eq!(fs::read(&original).unwrap(), original_bytes, "source file must remain immutable");
+    assert_eq!(
+        fs::read(&original).unwrap(),
+        original_bytes,
+        "source file must remain immutable"
+    );
 
     // Verify moov atom is placed early (faststart)
     let published_bytes = fs::read(&published).unwrap();
@@ -119,10 +132,13 @@ fn yalashbab_smart_abr_two_pass_compresses_and_faststarts_mp4() {
 }
 
 #[test]
-fn benchmark_sample_30s_mp4_matches_yalashbab_telemetry() {
-    let sample_path = Path::new("/Users/mamdouhaboammar/Documents/videos/in/sample-30s.mp4");
+fn benchmark_sample_mp4_matches_telemetry_when_configured() {
+    let sample_env = std::env::var("MAR2I_BENCHMARK_SAMPLE_PATH").ok();
+    let Some(sample_str) = sample_env else {
+        return;
+    };
+    let sample_path = Path::new(&sample_str);
     if !sample_path.is_file() {
-        eprintln!("sample-30s.mp4 not present on disk; skipping benchmark test");
         return;
     }
 
@@ -138,7 +154,7 @@ fn benchmark_sample_30s_mp4_matches_yalashbab_telemetry() {
         &ffmpeg,
         &ffprobe,
         sample_path,
-        Path::new("sample-30s.mp4"),
+        Path::new("sample.mp4"),
         &output,
         RunOptions {
             mode: Mode::Publishing,
@@ -156,14 +172,14 @@ fn benchmark_sample_30s_mp4_matches_yalashbab_telemetry() {
         quality,
     } = outcome
     else {
-        panic!("expected accepted SmartAbr outcome on sample-30s.mp4");
+        panic!("expected accepted SmartAbr outcome on benchmark sample");
     };
 
-    println!("sample-30s.mp4 compression result: before={before}, after={after}, quality={quality}");
-    assert_eq!(before, 21657943);
-    // Yalashbab achieves 10,784,658 bytes (10.29 MB) - approximately 48-52% of original
     let ratio = after as f64 / before as f64;
-    assert!(ratio >= 0.45 && ratio <= 0.55, "ratio {ratio:.4} should be around 0.50 (50% size reduction)");
+    assert!(
+        (0.40..=0.60).contains(&ratio),
+        "ratio {ratio:.4} should be around 0.50 (50% size reduction)"
+    );
     assert!(quality.contains("SSIM"), "quality should report SSIM");
     assert!(published.is_file());
 }

@@ -2003,3 +2003,244 @@ select.select-surface:focus-visible { border-color: var(--green); outline: 3px s
   color: var(--muted);
   text-align: center;
 }
+
+/* Source Selector Button Group & Tag */
+.source-btn-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.source-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: var(--green-pale);
+  color: var(--green-dark);
+  font-weight: 600;
+  margin-inline-start: 8px;
+}
+
+.options-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--green-dark);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  margin: 16px 0;
+  transition: all 0.15s ease;
+}
+
+.options-link-btn:hover {
+  border-color: var(--green);
+  background: var(--green-pale);
+}
+
+/* Technical Snapshot Card */
+.technical-snapshot-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin: 16px 0 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.snapshot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.snapshot-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.snapshot-badge {
+  background: var(--green-pale);
+  color: var(--green-dark);
+  padding: 4px 10px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.snapshot-filename {
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.snapshot-savings-pill {
+  background: var(--green-dark);
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.snapshot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.snapshot-cell {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.snapshot-cell-label {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.snapshot-cell-values {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.val-before {
+  color: #c53030;
+  text-decoration: line-through;
+  font-size: 13px;
+}
+
+.val-after {
+  color: var(--green-dark);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.val-highlight {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.snapshot-cell-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.snapshot-cell-sub.text-success {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.snapshot-footer {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 12px;
+}
+
+.snapshot-meta-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.snapshot-meta-item strong {
+  color: var(--green-dark);
+}
+
+.snapshot-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* Settings Enhancements */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.setting-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.setting-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+
+.setting-card p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 0 0 12px;
+}
+
+.setting-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.badge-green {
+  background: var(--green-pale);
+  color: var(--green-dark);
+}
+
+.badge-blue {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.badge-gray {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.resource-spec {
+  display: block;
+  font-size: 11px;
+  color: var(--green);
+  margin-top: 3px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  direction: ltr;
+  text-align: right;
+}
+

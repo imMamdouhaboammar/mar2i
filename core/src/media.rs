@@ -223,7 +223,10 @@ pub fn inspect(ffprobe: &Path, path: &Path) -> Result<InspectedMedia> {
     if !finished {
         let _ = child.kill();
         let _ = child.wait();
-        bail!("ffprobe inspection timed out after 10s for {}", path.display());
+        bail!(
+            "ffprobe inspection timed out after 10s for {}",
+            path.display()
+        );
     }
 
     let result = child

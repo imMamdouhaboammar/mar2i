@@ -1,6 +1,7 @@
 use crate::media::{InspectedMedia, inspect};
 use crate::policy::{
-    AudioPlan, CodecPreference, Decision, Mode, choose_plan_with_preference, validate_container_compatibility,
+    AudioPlan, CodecPreference, Decision, Mode, choose_plan_with_preference,
+    validate_container_compatibility,
 };
 use crate::worker::Control;
 use anyhow::{Context, Result, bail};
@@ -907,7 +908,7 @@ pub fn run_one_with_registry(
                 .args(["-an", "-f", "mp4"])
                 .arg(if cfg!(windows) { "NUL" } else { "/dev/null" });
 
-            run_command_cancellable(&mut command_pass1, "YalaShbab 2-Pass ABR Pass 1", control)?;
+            run_command_cancellable(&mut command_pass1, "Smart 2-Pass ABR (Pass 1)", control)?;
 
             // Pass 2: Final bitstream encoding
             let mut command_pass2 = Command::new(ffmpeg);
@@ -954,7 +955,7 @@ pub fn run_one_with_registry(
                 .args(["-movflags", "+faststart"])
                 .arg(temporary);
 
-            run_command_cancellable(&mut command_pass2, "YalaShbab 2-Pass ABR Pass 2", control)?;
+            run_command_cancellable(&mut command_pass2, "Smart 2-Pass ABR (Pass 2)", control)?;
 
             verify_decode(ffmpeg, temporary, control)?;
             let accepted = inspect(ffprobe, temporary)?;

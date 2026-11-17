@@ -15,18 +15,6 @@ pub enum CodecPreference {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum RateControl {
-    /// Traditional constant quality factor (used by existing H.264/HEVC/AV1/VP9 presets)
-    Crf(u8),
-    /// YalaShbab 2-Pass Target Bitrate (in kbps) with a minimum SSIM floor (in basis points, e.g. 9450 = 0.945)
-    TwoPassAbr {
-        target_kbps: u32,
-        preset: &'static str, // "fast"
-        min_ssim_bps: u16,    // 9450 (0.9450)
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AudioPlan {
     Copy,
     TranscodeAac { bitrate_kbps: u32 },
@@ -157,7 +145,7 @@ pub enum Decision {
     },
 }
 
-pub fn compute_yalashbab_target_kbps(
+pub fn compute_target_abr_kbps(
     input_bytes: u64,
     duration_sec: f64,
     audio_bitrate_bps: u64,
@@ -274,8 +262,9 @@ pub fn choose_plan_with_preference(
                 }
                 if profile.subtitle_count != 0 {
                     return Decision::Skip {
-                        reason: "subtitle streams need an explicitly supported publication container"
-                            .into(),
+                        reason:
+                            "subtitle streams need an explicitly supported publication container"
+                                .into(),
                     };
                 }
                 let audio_plan = if profile.audio_codecs.iter().all(|c| c == "aac") {
@@ -284,7 +273,9 @@ pub fn choose_plan_with_preference(
                     AudioPlan::TranscodeAac { bitrate_kbps: 128 }
                 };
 
-                let min_safe_kbps = (profile.width as f64 * profile.height as f64 * profile.frame_rate * 0.032) / 1000.0;
+                let min_safe_kbps =
+                    (profile.width as f64 * profile.height as f64 * profile.frame_rate * 0.032)
+                        / 1000.0;
                 if let Some(video_bps) = profile.video_bitrate {
                     let video_kbps = video_bps as f64 / 1000.0;
                     if video_kbps <= min_safe_kbps {
@@ -295,7 +286,8 @@ pub fn choose_plan_with_preference(
                 }
 
                 let target_kbps = if let Some(video_bps) = profile.video_bitrate {
-                    let half_kbps = ((video_bps as f64 * 0.50 / 1000.0 - 18.5) / 50.0).round() * 50.0;
+                    let half_kbps =
+                        ((video_bps as f64 * 0.50 / 1000.0 - 18.5) / 50.0).round() * 50.0;
                     if half_kbps < min_safe_kbps {
                         min_safe_kbps.round() as u32
                     } else {

@@ -13,6 +13,9 @@ globalThis.window = window
 globalThis.document = window.document
 
 // @ts-ignore
+globalThis.Element = window.Element
+
+// @ts-ignore
 globalThis.HTMLElement = window.HTMLElement
 
 // @ts-ignore

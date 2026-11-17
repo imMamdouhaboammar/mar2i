@@ -89,7 +89,7 @@ fn parse_profile(profile: &str) -> Result<ResourceProfile, String> {
 fn parse_codec(codec: &str) -> Result<CodecPreference, String> {
     match codec {
         "auto" => Ok(CodecPreference::Auto),
-        "smart_abr" | "smart" | "abr" | "yalashbab" => Ok(CodecPreference::SmartAbr),
+        "smart_abr" | "smart" | "abr" => Ok(CodecPreference::SmartAbr),
         "h264" => Ok(CodecPreference::H264),
         "hevc" => Ok(CodecPreference::Hevc),
         "av1" => Ok(CodecPreference::Av1),
@@ -351,7 +351,10 @@ fn control_batch(action: String, runtime: State<'_, Arc<Runtime>>) -> Result<(),
 }
 
 #[tauri::command]
-fn open_output_directory(path: Option<String>, runtime: State<'_, Arc<Runtime>>) -> Result<(), String> {
+fn open_output_directory(
+    path: Option<String>,
+    runtime: State<'_, Arc<Runtime>>,
+) -> Result<(), String> {
     let target = if let Some(p) = path.filter(|s| !s.trim().is_empty()) {
         PathBuf::from(p)
     } else {
@@ -644,9 +647,7 @@ async fn compress_single_video(
             return Err(format!("تم تخطي الملف: {reason}"));
         }
         mar2i_core::runner::RunOutcome::Rejected { reason } => {
-            return Err(format!(
-                "تم رفض الضغط لعدم استيفاء معايير الجودة: {reason}"
-            ));
+            return Err(format!("تم رفض الضغط لعدم استيفاء معايير الجودة: {reason}"));
         }
     };
 
@@ -760,7 +761,8 @@ fn save_report_file(
     if !src.is_file() {
         let db = state_dir.join("batch.sqlite");
         if db.is_file()
-            && let Ok(queue) = BatchQueue::open(&db, &selected.input, &selected.output, selected.mode)
+            && let Ok(queue) =
+                BatchQueue::open(&db, &selected.input, &selected.output, selected.mode)
             && let Ok(jobs) = queue.list()
         {
             let _ = write_reports(&state_dir, &jobs);
@@ -773,7 +775,8 @@ fn save_report_file(
     if let Some(parent) = dest_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::copy(&src, &dest_path).map_err(|e| format!("فشل نسخ التقرير إلى الوجهة المحددة: {e}"))?;
+    std::fs::copy(&src, &dest_path)
+        .map_err(|e| format!("فشل نسخ التقرير إلى الوجهة المحددة: {e}"))?;
     Ok(destination)
 }
 
@@ -829,23 +832,9 @@ mod tests {
             out_dir.to_str().unwrap().to_string(),
             "publish".to_string(),
             None,
-        )).unwrap();
+        ))
+        .unwrap();
         assert_eq!(res.total, 0);
-    }
-
-    #[test]
-    fn test_analyze_user_dirs() {
-        use std::path::Path;
-        if Path::new("/Users/mamdouhaboammar/Documents/videos/in").exists() {
-            let res = tauri::async_runtime::block_on(analyze_directory(
-                "/Users/mamdouhaboammar/Documents/videos/in".into(),
-                "/Users/mamdouhaboammar/Documents/videos/out".into(),
-                "publish".into(),
-                Some("hevc".into()),
-            )).unwrap();
-            println!("Analyze result details: {:?}", res);
-            assert_eq!(res.supported, 1);
-        }
     }
 
     #[test]
