@@ -2,7 +2,7 @@ export type Screen = 'new' | 'options' | 'review' | 'progress' | 'results' | 'se
 
 export type Mode = 'publish' | 'archive'
 
-export type CodecId = 'auto' | 'h264' | 'hevc' | 'av1' | 'vp9' | 'ffv1'
+export type CodecId = 'auto' | 'smart_abr' | 'h264' | 'hevc' | 'av1' | 'vp9' | 'ffv1'
 
 export type Resource = 'low' | 'balanced' | 'maximum'
 
@@ -40,6 +40,17 @@ export type MinistryPreset = {
 }
 
 export const ministryPresets: MinistryPreset[] = [
+  {
+    id: 'smart_half_size',
+    name: 'الضغط الذكي لتقليص الحجم 50% (2-Pass ABR)',
+    nameEn: 'Smart 50% Size Reduction (2-Pass ABR)',
+    codec: 'smart_abr',
+    mode: 'publish',
+    crf: 0,
+    hardwareAllowed: true,
+    description: 'محرك ضغط ذكي يقلص حجم الفيديو بنسبة 50% مع ثبات الأبعاد (1080p) ومعدل الإطارات ونسخ صوت AAC المباشر (مطابق لخوارزمية يلا شباب)',
+    badge: 'تقليص 50% + جودة فائقة',
+  },
   {
     id: 'master_archive',
     name: 'الأرشفة الوثائقية غير المنقوصة',
@@ -88,6 +99,7 @@ export const ministryPresets: MinistryPreset[] = [
 
 export const codecs: Codec[] = [
   { id: 'auto', name: 'تلقائي', size: 'متوازن', speed: 'حسب الملف', compatibility: 'حسب الهدف', description: 'نفحص خصائص كل فيديو ونختار إعدادًا مناسبًا للهدف المحدد', caveat: 'قد نترك بعض الملفات كما هي إذا كانت إعادة الضغط غير مفيدة', recommendation: 'الاختيار الأنسب عند معالجة مجموعة كبيرة من الملفات المختلفة', bestFor: 'both' },
+  { id: 'smart_abr', name: 'الضغط الذكي (تقليص 50% - 2-Pass ABR)', size: 'نصف الحجم (-50%)', speed: 'سريع (Pass 1/2)', compatibility: 'شامل 100%', description: 'حساب معدل البت المستهدف ديناميكيًا للوصول لنصف الحجم بدقة، مع الحفاظ على الأبعاد (1080p)، ومعدل الإطارات، ونسخ الصوت بدون إعادة ترميز', caveat: 'يتطلب ممرين (2-Pass) لضمان دقة الحجم وجودة المشاهد المعقدة', recommendation: 'الخيار الأنسب لتقليص أحجام الفيديوهات الكبيرة للمشاركة دون التأثير على وضوح الصورة', bestFor: 'publish' },
   { id: 'h264', name: 'H.264', size: 'أكبر نسبيًا', speed: 'سريع', compatibility: 'الأوسع', description: 'اختيار مناسب للتداول والتشغيل على نطاق واسع من الأجهزة والمتصفحات', caveat: 'قد ينتج ملفًا أكبر من الترميزات الأحدث عند جودة مماثلة', recommendation: 'مناسب عندما تكون سهولة تشغيل الفيديو أهم من أصغر حجم ممكن', bestFor: 'publish' },
   { id: 'hevc', name: 'H.265 / HEVC', size: 'أصغر غالبًا', speed: 'متوسط', compatibility: 'جيد', description: 'يوفر عادةً ضغطًا أعلى من H.264، مع دعم تسريع البطاقة الرسومية', caveat: 'تختلف قابلية التشغيل في المتصفحات والأجهزة القديمة', recommendation: 'مناسب لملفات 4K وللأجهزة التي تدعم HEVC', bestFor: 'publish' },
   { id: 'av1', name: 'AV1', size: 'صغير غالبًا', speed: 'أبطأ', compatibility: 'متفاوت', description: 'يساعد على الوصول إلى حجم أقل عند جودة بصرية متقاربة', caveat: 'الضغط قد يستغرق وقتًا أطول، وبعض الأجهزة القديمة لا تشغله', recommendation: 'مناسب عندما تدعم المنصة والأجهزة هذا الترميز', bestFor: 'publish' },
@@ -147,16 +159,18 @@ export function projectCodecSavings(totalGb: number, codec: CodecId, mode: Mode)
     return { projectedGb: projected, savedGb: saved, percent: 45 }
   }
 
-  const factor = {
+  const factor: Record<CodecId, number> = {
     auto: 0.40,
+    smart_abr: 0.50,
     av1: 0.30,
     hevc: 0.38,
     vp9: 0.45,
     h264: 0.55,
     ffv1: 0.95,
-  }[codec] ?? 0.50
+  }
 
-  const projectedGb = Math.round(totalGb * factor * 10) / 10
+  const selectedFactor = factor[codec] ?? 0.50
+  const projectedGb = Math.round(totalGb * selectedFactor * 10) / 10
   const savedGb = Math.round((totalGb - projectedGb) * 10) / 10
   const percent = Math.round(((totalGb - projectedGb) / totalGb) * 100)
 

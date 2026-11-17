@@ -2,9 +2,10 @@
 target/
 **/target/
 
-# Tauri build output (not the source)
+# Tauri build output and schemas
 src-tauri/target/
 core/target/
+src-tauri/gen/schemas/
 
 # Node / Bun
 node_modules/
@@ -15,7 +16,7 @@ dist/
 dist-ssr/
 *.local
 
-# Logs
+# Logs and debug output
 logs/
 *.log
 npm-debug.log*
@@ -23,12 +24,15 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Editor and OS artifacts
+# Editor, OS and system artifacts
 .vscode/*
 !.vscode/extensions.json
 .idea/
 .cursor/
 .DS_Store
+._*
+.Spotlight-V100
+.Trashes
 *.suo
 *.ntvs*
 *.njsproj
@@ -36,7 +40,7 @@ pnpm-debug.log*
 *.sw?
 Thumbs.db
 
-# Environment variables & secrets
+# Environment variables, credentials & secrets
 .env
 .env.*
 !.env.example
@@ -45,10 +49,23 @@ Thumbs.db
 *.cert
 *.pfx
 *.p12
+*.keystore
+*.jks
+*.gpg
+*.asc
+credentials.json
+service-account*.json
+token.json
+id_rsa*
+id_ed25519*
 
 # Agent harness state and local symlinked skills
 .fable/
 .ponytail
+.gemini/
+.system_generated/
+.agent-kernel/
+.no-mistakes/
 .agents/skills/*
 !.agents/skills/mar2i-ops/
 
@@ -59,6 +76,33 @@ coverage/
 
 # Runtime database written by the app into the output folder (never in-repo)
 .mar2i/
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+
+# Media and test raw video files (prevent committing large video files)
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.m4v
+*.webm
+*.flv
+*.wmv
+*.y4m
+*.raw
+*.m2ts
+*.m4a
+*.aac
+*.wav
+
+# FFmpeg 2-pass temporary passlogs and partial encodes
+ffmpeg2pass*
+*.log.mbtree
+.mar2i-passlog-*
+.mar2i-partial-*
 
 # Tauri auto-generated WiX / NSIS temp files
 *.msi

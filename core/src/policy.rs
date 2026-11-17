@@ -10,6 +10,26 @@ pub enum CodecPreference {
     Av1,
     Vp9,
     Ffv1,
+    #[serde(rename = "smart_abr")]
+    SmartAbr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RateControl {
+    /// Traditional constant quality factor (used by existing H.264/HEVC/AV1/VP9 presets)
+    Crf(u8),
+    /// YalaShbab 2-Pass Target Bitrate (in kbps) with a minimum SSIM floor (in basis points, e.g. 9450 = 0.945)
+    TwoPassAbr {
+        target_kbps: u32,
+        preset: &'static str, // "fast"
+        min_ssim_bps: u16,    // 9450 (0.9450)
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AudioPlan {
+    Copy,
+    TranscodeAac { bitrate_kbps: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -124,9 +144,52 @@ pub enum Decision {
         container: &'static str,
         crf: u8,
     },
+    EncodeAbr {
+        codec: &'static str,
+        container: &'static str,
+        target_kbps: u32,
+        preset: &'static str,
+        min_ssim_bps: u16,
+        audio_plan: AudioPlan,
+    },
     Skip {
         reason: String,
     },
+}
+
+pub fn compute_yalashbab_target_kbps(
+    input_bytes: u64,
+    duration_sec: f64,
+    audio_bitrate_bps: u64,
+    width: u32,
+    height: u32,
+    fps: f64,
+    target_ratio: f64,
+) -> Result<u32, &'static str> {
+    if duration_sec <= 0.0 || !duration_sec.is_finite() {
+        return Err("invalid duration");
+    }
+    if width == 0 || height == 0 || fps <= 0.0 {
+        return Err("invalid video dimensions or frame rate");
+    }
+
+    let total_target_kbps = (input_bytes as f64 * 8.0 * target_ratio) / (duration_sec * 1000.0);
+    let audio_kbps = if audio_bitrate_bps > 0 {
+        (audio_bitrate_bps as f64 / 1000.0).clamp(64.0, 320.0)
+    } else {
+        0.0
+    };
+
+    let raw_video_kbps = ((total_target_kbps - audio_kbps - 18.5) / 50.0).round() * 50.0;
+    let min_safe_kbps = (width as f64 * height as f64 * fps * 0.032) / 1000.0;
+
+    let target_video_kbps = if raw_video_kbps < min_safe_kbps {
+        min_safe_kbps.round() as u32
+    } else {
+        raw_video_kbps.max(300.0) as u32
+    };
+
+    Ok(target_video_kbps)
 }
 
 pub fn choose_plan(profile: &MediaProfile, mode: Mode) -> Decision {
@@ -201,6 +264,54 @@ pub fn choose_plan_with_preference(
                     reason:
                         "FFV1 lossless archival codec is not suitable for publishing/distribution"
                             .into(),
+                };
+            }
+            if preference == CodecPreference::SmartAbr {
+                if profile.is_hdr() {
+                    return Decision::Skip {
+                        reason: "HDR needs an approved color-preserving publishing profile".into(),
+                    };
+                }
+                if profile.subtitle_count != 0 {
+                    return Decision::Skip {
+                        reason: "subtitle streams need an explicitly supported publication container"
+                            .into(),
+                    };
+                }
+                let audio_plan = if profile.audio_codecs.iter().all(|c| c == "aac") {
+                    AudioPlan::Copy
+                } else {
+                    AudioPlan::TranscodeAac { bitrate_kbps: 128 }
+                };
+
+                let min_safe_kbps = (profile.width as f64 * profile.height as f64 * profile.frame_rate * 0.032) / 1000.0;
+                if let Some(video_bps) = profile.video_bitrate {
+                    let video_kbps = video_bps as f64 / 1000.0;
+                    if video_kbps <= min_safe_kbps {
+                        return Decision::Copy {
+                            reason: "already at minimum safe perceptual bitrate floor".into(),
+                        };
+                    }
+                }
+
+                let target_kbps = if let Some(video_bps) = profile.video_bitrate {
+                    let half_kbps = ((video_bps as f64 * 0.50 / 1000.0 - 18.5) / 50.0).round() * 50.0;
+                    if half_kbps < min_safe_kbps {
+                        min_safe_kbps.round() as u32
+                    } else {
+                        half_kbps.max(300.0) as u32
+                    }
+                } else {
+                    2700
+                };
+
+                return Decision::EncodeAbr {
+                    codec: "libx264",
+                    container: "mp4",
+                    target_kbps,
+                    preset: "fast",
+                    min_ssim_bps: 9450,
+                    audio_plan,
                 };
             }
             if profile.is_hdr() {
@@ -307,6 +418,7 @@ pub fn choose_plan_with_preference(
                     ("libvpx-vp9", "webm", crf)
                 }
                 CodecPreference::Ffv1 => unreachable!(),
+                CodecPreference::SmartAbr => unreachable!(),
             };
 
             if let Some(available) = available_encoders

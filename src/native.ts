@@ -48,8 +48,72 @@ export async function pickDirectory(): Promise<string | null> {
   return chosen
 }
 
-export function analyzeDirectory(input: string, output: string, mode: string): Promise<ScanResult> {
-  return invoke<ScanResult>('analyze_directory', { input, output, mode })
+export async function pickVideoFile(): Promise<string | null> {
+  if (!isDesktop) return null
+
+  const chosen = await open({
+    directory: false,
+    multiple: false,
+    title: 'اختر ملف الفيديو',
+    filters: [{
+      name: 'Video',
+      extensions: ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm'],
+    }],
+  })
+
+  if (chosen === null || Array.isArray(chosen)) return null
+
+  return chosen
+}
+
+export type InspectedMedia = {
+  path: string
+  fileSize: number
+  width: number
+  height: number
+  fps: number
+  durationSeconds: number
+  videoCodec: string
+  videoBitrate: number | null
+  totalBitrate: number | null
+  audioCodec: string | null
+  audioBitrate: number | null
+  targetAbrKbps: number | null
+  recommendedAction: string
+}
+
+export type CompressionSnapshotReport = {
+  sourcePath: string
+  outputPath: string
+  originalSize: number
+  compressedSize: number
+  sizeReductionPercent: number
+  originalVideoBitrate: number | null
+  compressedVideoBitrate: number | null
+  originalResolution: string
+  compressedResolution: string
+  originalFps: number
+  compressedFps: number
+  videoCodec: string
+  audioCodec: string
+  audioAction: string
+  container: string
+  faststart: boolean
+  ssim: number | null
+  psnr: number | null
+  elapsedSeconds: number
+}
+
+export function inspectMediaFile(path: string): Promise<InspectedMedia> {
+  return invoke<InspectedMedia>('inspect_media_file', { path })
+}
+
+export function compressSingleVideo(sourcePath: string, outputDir?: string, targetRatio?: number): Promise<CompressionSnapshotReport> {
+  return invoke<CompressionSnapshotReport>('compress_single_video', { sourcePath, outputDir, targetRatio })
+}
+
+export function analyzeDirectory(input: string, output: string, mode: string, codec?: string): Promise<ScanResult> {
+  return invoke<ScanResult>('analyze_directory', { input, output, mode, codec })
 }
 
 export function startNativeBatch(input: string, output: string, mode: string, profile: string, codec: string): Promise<void> {

@@ -183,8 +183,10 @@ pub fn inspect(ffprobe: &Path, path: &Path) -> Result<InspectedMedia> {
         bail!("source must be a regular file, not a symbolic link");
     }
 
-    let result = Command::new(ffprobe)
+    let mut command = Command::new(ffprobe);
+    command
         .args([
+            "-hide_banner",
             "-v",
             "error",
             "-show_format",
@@ -193,9 +195,41 @@ pub fn inspect(ffprobe: &Path, path: &Path) -> Result<InspectedMedia> {
             "-of",
             "json",
         ])
-        .arg(path)
-        .output()
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .arg(path);
+
+    let mut child = command
+        .spawn()
         .with_context(|| format!("cannot launch ffprobe: {}", ffprobe.display()))?;
+
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(10);
+    let poll = std::time::Duration::from_millis(50);
+    let mut finished = false;
+
+    while start.elapsed() < timeout {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                finished = true;
+                break;
+            }
+            Ok(None) => std::thread::sleep(poll),
+            Err(e) => bail!("error waiting for ffprobe: {e}"),
+        }
+    }
+
+    if !finished {
+        let _ = child.kill();
+        let _ = child.wait();
+        bail!("ffprobe inspection timed out after 10s for {}", path.display());
+    }
+
+    let result = child
+        .wait_with_output()
+        .context("failed to collect ffprobe output")?;
+
     if !result.status.success() {
         bail!(
             "ffprobe failed: {}",

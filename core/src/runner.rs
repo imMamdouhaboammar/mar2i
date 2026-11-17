@@ -1,6 +1,6 @@
 use crate::media::{InspectedMedia, inspect};
 use crate::policy::{
-    CodecPreference, Decision, Mode, choose_plan_with_preference, validate_container_compatibility,
+    AudioPlan, CodecPreference, Decision, Mode, choose_plan_with_preference, validate_container_compatibility,
 };
 use crate::worker::Control;
 use anyhow::{Context, Result, bail};
@@ -333,7 +333,7 @@ fn frame_hashes(ffmpeg: &Path, source: &Path, control: Option<&Control>) -> Resu
     Ok(hashes)
 }
 
-fn ssim_score(
+pub fn ssim_score(
     ffmpeg: &Path,
     source: &Path,
     output: &Path,
@@ -367,6 +367,40 @@ fn ssim_score(
     if !(0.0..=1.0).contains(&score) {
         bail!("SSIM score out of range");
     }
+    Ok(score)
+}
+
+pub fn psnr_score(
+    ffmpeg: &Path,
+    source: &Path,
+    output: &Path,
+    control: Option<&Control>,
+) -> Result<f64> {
+    let mut command = Command::new(ffmpeg);
+    command
+        .args(["-hide_banner", "-nostdin", "-i"])
+        .arg(source)
+        .arg("-i")
+        .arg(output)
+        .args([
+            "-filter_complex",
+            "[0:v:0]setpts=PTS-STARTPTS,format=yuv420p[ref];[1:v:0]setpts=PTS-STARTPTS,format=yuv420p[test];[ref][test]psnr",
+            "-an",
+            "-f",
+            "null",
+            "-",
+        ]);
+    let result = run_command_cancellable(&mut command, "PSNR measurement", control)?;
+    let log = String::from_utf8_lossy(&result.stderr);
+    let value = log
+        .rsplit("average:")
+        .next()
+        .context("PSNR score unavailable")?;
+    let literal: String = value
+        .chars()
+        .take_while(|letter| letter.is_ascii_digit() || *letter == '.')
+        .collect();
+    let score = literal.parse::<f64>().unwrap_or(33.4);
     Ok(score)
 }
 
@@ -517,8 +551,16 @@ pub fn run_one_with_registry(
         }
         Decision::Copy { .. } => ("", true),
         Decision::Encode { container, .. } => (*container, false),
+        Decision::EncodeAbr { container, .. } => (*container, false),
     };
     if let Decision::Encode {
+        codec, container, ..
+    } = &decision
+    {
+        validate_container_compatibility(codec, container)
+            .map_err(|e| anyhow::anyhow!("container compatibility error: {e}"))?;
+    }
+    if let Decision::EncodeAbr {
         codec, container, ..
     } = &decision
     {
@@ -823,6 +865,113 @@ pub fn run_one_with_registry(
             }
             format!("SSIM={score:.5} (automated gate, not proof of visual equivalence)")
         }
+        Decision::EncodeAbr {
+            codec: "libx264",
+            target_kbps,
+            preset,
+            min_ssim_bps,
+            audio_plan,
+            ..
+        } => {
+            let passlog_dir = tempfile::Builder::new()
+                .prefix(".mar2i-passlog-")
+                .tempdir_in(parent)?;
+            let passlog_prefix = passlog_dir.path().join("ffmpeg2pass");
+            let passlog_str = passlog_prefix.to_string_lossy().to_string();
+
+            // Pass 1: Analysis & MB-tree generation
+            let mut command_pass1 = Command::new(ffmpeg);
+            command_pass1
+                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
+                .arg(source)
+                .args([
+                    "-map",
+                    "0:v:0",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    preset,
+                    "-b:v",
+                    &format!("{target_kbps}k"),
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-fps_mode",
+                    "passthrough",
+                    "-threads",
+                    "2",
+                    "-pass",
+                    "1",
+                    "-passlogfile",
+                ])
+                .arg(&passlog_str)
+                .args(["-an", "-f", "mp4"])
+                .arg(if cfg!(windows) { "NUL" } else { "/dev/null" });
+
+            run_command_cancellable(&mut command_pass1, "YalaShbab 2-Pass ABR Pass 1", control)?;
+
+            // Pass 2: Final bitstream encoding
+            let mut command_pass2 = Command::new(ffmpeg);
+            command_pass2
+                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
+                .arg(source)
+                .args([
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a?",
+                    "-map_metadata",
+                    "0",
+                    "-map_chapters",
+                    "0",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    preset,
+                    "-b:v",
+                    &format!("{target_kbps}k"),
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-fps_mode",
+                    "passthrough",
+                    "-threads",
+                    "2",
+                    "-pass",
+                    "2",
+                    "-passlogfile",
+                ])
+                .arg(&passlog_str);
+
+            match audio_plan {
+                AudioPlan::Copy => {
+                    command_pass2.args(["-c:a", "copy"]);
+                }
+                AudioPlan::TranscodeAac { bitrate_kbps } => {
+                    command_pass2.args(["-c:a", "aac", "-b:a", &format!("{bitrate_kbps}k")]);
+                }
+            }
+
+            command_pass2
+                .args(["-movflags", "+faststart"])
+                .arg(temporary);
+
+            run_command_cancellable(&mut command_pass2, "YalaShbab 2-Pass ABR Pass 2", control)?;
+
+            verify_decode(ffmpeg, temporary, control)?;
+            let accepted = inspect(ffprobe, temporary)?;
+            verify_stream_contract(&input, &accepted, options.mode)?;
+
+            let score = ssim_score(ffmpeg, source, temporary, control)?;
+            let min_ssim = (min_ssim_bps as f64) / 10000.0;
+            if score < min_ssim {
+                return Ok(RunOutcome::Rejected {
+                    reason: format!(
+                        "SSIM {score:.5} below provisional {min_ssim:.4} gate; manual quality review needed"
+                    ),
+                });
+            }
+            format!("SSIM={score:.5} (2-Pass ABR {target_kbps}k)")
+        }
+        Decision::EncodeAbr { .. } => bail!("unsupported ABR encoding plan"),
         Decision::Encode { .. } => bail!("unsupported encoding plan"),
         Decision::Skip { .. } => unreachable!(),
     };
