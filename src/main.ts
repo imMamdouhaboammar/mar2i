@@ -475,6 +475,24 @@ function resultRows(): string {
   }).join('')
 }
 
+function formatArabicReason(reason: string | null): string {
+  if (!reason) return 'لم تتوفر تفاصيل إضافية'
+
+  if (reason.includes('already-efficient H.264')) {
+    return 'الملف الأصلي مضغوط مسبقاً بترميز H.264 بكفاءة عالية: إعادة ضغطه بنفس الترميز ستتلف جودته البصرية دون توفير مساحة، لذلك تم نقله كنسخة مطابقة حفاظاً على الأصل. لتصغير حجمه، اختر ترميز HEVC أو AV1.'
+  }
+
+  if (reason.includes('already-efficient HEVC')) {
+    return 'الملف الأصلي مضغوط بترميز HEVC عالي الكفاءة مسبقاً، ولا يتطلب ضغطاً إضافياً.'
+  }
+
+  if (reason.includes('already-efficient AV1')) {
+    return 'الملف الأصلي مضغوط بترميز AV1 الحديث مسبقاً.'
+  }
+
+  return reason
+}
+
 function nativeResultRows() {
   const search = state.search.trim().toLocaleLowerCase('ar')
   const jobs = (state.batch?.jobs ?? []).filter((job) => job.relative.toLocaleLowerCase('ar').includes(search))
@@ -500,7 +518,7 @@ function nativeResultRows() {
           <button class="row-probe-btn" type="button" data-probe-file="${name}" title="فحص تفاصيل الملف">${icon('report', 15)}</button>
         </div>
       </td></tr>
-      ${state.expandedFile === job.relative ? `<tr class="detail-row"><td colspan="6"><div class="detail-note">${icon('help', 18)}<div><strong>تفاصيل نتيجة الملف</strong><span>${escapeHtml(job.reason ?? job.quality ?? 'لم تتوفر تفاصيل إضافية')}</span></div></div></td></tr>` : ''}`
+      ${state.expandedFile === job.relative ? `<tr class="detail-row"><td colspan="6"><div class="detail-note">${icon('help', 18)}<div><strong>تفاصيل نتيجة الملف</strong><span>${escapeHtml(formatArabicReason(job.reason ?? job.quality))}</span></div></div></td></tr>` : ''}`
   }).join('')
 }
 
