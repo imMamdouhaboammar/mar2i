@@ -25,6 +25,7 @@ export type CompareSliderOptions = {
   beforeLabel?: string
   afterLabel?: string
   ssimScore?: number
+  isMeasuredScore?: boolean
   initialPosition?: number // 0 to 100
   scenes?: SceneFrame[]
   onSceneChange?: (sceneId: string) => void
@@ -95,7 +96,10 @@ export class CompareSlider {
     const beforeLabel = this.options.beforeLabel ?? 'المصدر الأصلي (ProRes 422 HQ)'
     const afterLabel = this.options.afterLabel ?? 'النسخة المضغوطة (HEVC Main 10)'
     const ssim = activeScene.ssimScore
-    const ssimText = `SSIM: ${ssim.toFixed(3)} · قيمة توضيحية، وليست نتيجة فحص حقيقي`
+
+    const ssimText = this.options.isMeasuredScore
+      ? `SSIM: ${ssim.toFixed(3)} · قياس فعلي عبر FFmpeg`
+      : `SSIM: ${ssim.toFixed(3)} · قيمة توضيحية، وليست نتيجة فحص حقيقي`
 
     this.container.innerHTML = `
       <div class="compare-component-root" dir="rtl">

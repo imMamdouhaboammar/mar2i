@@ -22,6 +22,7 @@ pub struct BatchOptions {
     pub mode: Mode,
     pub profile: ResourceProfile,
     pub preference: CodecPreference,
+    pub hardware_acceleration: bool,
 }
 
 impl BatchOptions {
@@ -30,6 +31,7 @@ impl BatchOptions {
             mode,
             profile,
             preference: CodecPreference::Auto,
+            hardware_acceleration: false,
         }
     }
 }
@@ -323,6 +325,10 @@ pub fn run_batch_with_options(
                         mode: options.mode,
                         preference: options.preference,
                         available_encoders: Some(encoders_ref),
+                        hardware_acceleration: options.hardware_acceleration,
+                        trim_start: None,
+                        trim_end: None,
+                        transform: None,
                     };
                     loop {
                         if !control.wait_until_active() {
@@ -331,7 +337,15 @@ pub fn run_batch_with_options(
                         let Some(job) = queue.claim_next()? else {
                             break;
                         };
-                        process_next(queue, ffmpeg, ffprobe, output, run_opts, job, control)?;
+                        process_next(
+                            queue,
+                            ffmpeg,
+                            ffprobe,
+                            output,
+                            run_opts.clone(),
+                            job,
+                            control,
+                        )?;
                     }
                     Ok(())
                 })

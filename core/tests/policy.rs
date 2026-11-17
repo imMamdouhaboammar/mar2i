@@ -59,6 +59,45 @@ fn compressed_h264_below_size_threshold_is_copied_not_reencoded() {
 }
 
 #[test]
+fn real_world_web_mp4_with_moderate_bitrate_is_smart_abr_encoded_in_auto_mode() {
+    let mut p = example("h264");
+    // 5.57 Mbps at 1080p30 = BPP 0.0895 (above 0.042 and below 0.14)
+    p.video_bitrate = Some(5_570_000);
+    p.frame_rate = 30.0;
+    p.pix_fmt = "yuv420p".into();
+    let plan = choose_plan(&p, Mode::Publishing);
+    assert!(matches!(plan, Decision::EncodeAbr { target_kbps, .. } if target_kbps > 0));
+}
+
+#[test]
+fn non_aac_audio_is_permitted_with_explicit_codec_preference() {
+    let mut p = example("h264");
+    p.audio_codecs = vec!["pcm_s16le".into()];
+    let plan = choose_plan_with_preference(&p, Mode::Publishing, CodecPreference::H264, None);
+    assert!(matches!(
+        plan,
+        Decision::Encode {
+            codec: "libx264",
+            ..
+        }
+    ));
+}
+
+#[test]
+fn vfr_video_is_compressed_with_explicit_codec_preference() {
+    let mut p = example("h264");
+    p.variable_frame_rate = true;
+    let plan = choose_plan_with_preference(&p, Mode::Publishing, CodecPreference::H264, None);
+    assert!(matches!(
+        plan,
+        Decision::Encode {
+            codec: "libx264",
+            ..
+        }
+    ));
+}
+
+#[test]
 fn high_bitrate_source_uses_compatible_publishing_codec() {
     let p = example("prores");
     assert!(matches!(

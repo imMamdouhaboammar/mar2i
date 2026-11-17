@@ -180,6 +180,55 @@ pub fn compute_target_abr_kbps(
     Ok(target_video_kbps)
 }
 
+fn smart_abr_plan(profile: &MediaProfile) -> Decision {
+    if profile.is_hdr() {
+        return Decision::Skip {
+            reason: "HDR needs an approved color-preserving publishing profile".into(),
+        };
+    }
+    if profile.subtitle_count != 0 {
+        return Decision::Skip {
+            reason: "subtitle streams need an explicitly supported publication container".into(),
+        };
+    }
+    let audio_plan = if profile.audio_codecs.iter().all(|c| c == "aac") {
+        AudioPlan::Copy
+    } else {
+        AudioPlan::TranscodeAac { bitrate_kbps: 128 }
+    };
+
+    let min_safe_kbps =
+        (profile.width as f64 * profile.height as f64 * profile.frame_rate * 0.032) / 1000.0;
+    if let Some(video_bps) = profile.video_bitrate {
+        let video_kbps = video_bps as f64 / 1000.0;
+        if video_kbps <= min_safe_kbps {
+            return Decision::Copy {
+                reason: "already at minimum safe perceptual bitrate floor".into(),
+            };
+        }
+    }
+
+    let target_kbps = if let Some(video_bps) = profile.video_bitrate {
+        let half_kbps = ((video_bps as f64 * 0.50 / 1000.0 - 18.5) / 50.0).round() * 50.0;
+        if half_kbps < min_safe_kbps {
+            min_safe_kbps.round() as u32
+        } else {
+            half_kbps.max(300.0) as u32
+        }
+    } else {
+        2700
+    };
+
+    Decision::EncodeAbr {
+        codec: "libx264",
+        container: "mp4",
+        target_kbps,
+        preset: "fast",
+        min_ssim_bps: 9450,
+        audio_plan,
+    }
+}
+
 pub fn choose_plan(profile: &MediaProfile, mode: Mode) -> Decision {
     choose_plan_with_preference(profile, mode, CodecPreference::Auto, None)
 }
@@ -255,56 +304,7 @@ pub fn choose_plan_with_preference(
                 };
             }
             if preference == CodecPreference::SmartAbr {
-                if profile.is_hdr() {
-                    return Decision::Skip {
-                        reason: "HDR needs an approved color-preserving publishing profile".into(),
-                    };
-                }
-                if profile.subtitle_count != 0 {
-                    return Decision::Skip {
-                        reason:
-                            "subtitle streams need an explicitly supported publication container"
-                                .into(),
-                    };
-                }
-                let audio_plan = if profile.audio_codecs.iter().all(|c| c == "aac") {
-                    AudioPlan::Copy
-                } else {
-                    AudioPlan::TranscodeAac { bitrate_kbps: 128 }
-                };
-
-                let min_safe_kbps =
-                    (profile.width as f64 * profile.height as f64 * profile.frame_rate * 0.032)
-                        / 1000.0;
-                if let Some(video_bps) = profile.video_bitrate {
-                    let video_kbps = video_bps as f64 / 1000.0;
-                    if video_kbps <= min_safe_kbps {
-                        return Decision::Copy {
-                            reason: "already at minimum safe perceptual bitrate floor".into(),
-                        };
-                    }
-                }
-
-                let target_kbps = if let Some(video_bps) = profile.video_bitrate {
-                    let half_kbps =
-                        ((video_bps as f64 * 0.50 / 1000.0 - 18.5) / 50.0).round() * 50.0;
-                    if half_kbps < min_safe_kbps {
-                        min_safe_kbps.round() as u32
-                    } else {
-                        half_kbps.max(300.0) as u32
-                    }
-                } else {
-                    2700
-                };
-
-                return Decision::EncodeAbr {
-                    codec: "libx264",
-                    container: "mp4",
-                    target_kbps,
-                    preset: "fast",
-                    min_ssim_bps: 9450,
-                    audio_plan,
-                };
+                return smart_abr_plan(profile);
             }
             if profile.is_hdr() {
                 return Decision::Skip {
@@ -317,13 +317,19 @@ pub fn choose_plan_with_preference(
                         .into(),
                 };
             }
-            if profile.audio_codecs.iter().any(|codec| codec != "aac") {
+            if preference == CodecPreference::Auto
+                && profile.codec == "prores"
+                && profile.audio_codecs.iter().any(|codec| codec != "aac")
+            {
                 return Decision::Skip {
                     reason: "audio codec needs an explicit preservation or transcode contract"
                         .into(),
                 };
             }
-            if profile.variable_frame_rate {
+            if preference == CodecPreference::Auto
+                && profile.codec == "h264"
+                && profile.variable_frame_rate
+            {
                 return Decision::Copy {
                     reason: "variable frame timing retained by copying original".into(),
                 };
@@ -339,13 +345,15 @@ pub fn choose_plan_with_preference(
                         };
                     }
                     if profile.codec == "h264"
-                        && profile
-                            .bits_per_pixel_per_frame()
-                            .is_some_and(|bpp| bpp <= 0.14)
+                        && let Some(bpp) = profile.bits_per_pixel_per_frame()
                     {
-                        return Decision::Copy {
-                            reason: "already-efficient H.264 source".into(),
-                        };
+                        if bpp <= 0.042 {
+                            return Decision::Copy {
+                                reason: "already-efficient H.264 source".into(),
+                            };
+                        } else if bpp <= 0.14 {
+                            return smart_abr_plan(profile);
+                        }
                     }
                     let crf = if profile.pix_fmt.contains("10") || profile.pix_fmt.contains("12") {
                         18
@@ -360,7 +368,7 @@ pub fn choose_plan_with_preference(
                     if profile.codec == "h264"
                         && profile
                             .bits_per_pixel_per_frame()
-                            .is_some_and(|bpp| bpp <= 0.14)
+                            .is_some_and(|bpp| bpp <= 0.042)
                     {
                         return Decision::Copy {
                             reason: "already-efficient H.264 source".into(),

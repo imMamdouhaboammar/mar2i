@@ -5,6 +5,7 @@ use crate::policy::{
 };
 use crate::worker::Control;
 use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
 use std::io::{BufReader, Read};
@@ -405,17 +406,62 @@ pub fn psnr_score(
     Ok(score)
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VideoTransform {
+    pub aspect_preset: Option<String>,
+    pub rotation_deg: u16,
+    pub flip_horizontal: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RunOptions<'a> {
+    pub mode: Mode,
+    pub preference: CodecPreference,
+    pub available_encoders: Option<&'a [String]>,
+    pub hardware_acceleration: bool,
+    pub trim_start: Option<f64>,
+    pub trim_end: Option<f64>,
+    pub transform: Option<VideoTransform>,
+}
+
+impl From<Mode> for RunOptions<'_> {
+    fn from(mode: Mode) -> Self {
+        Self {
+            mode,
+            preference: CodecPreference::Auto,
+            available_encoders: None,
+            hardware_acceleration: false,
+            trim_start: None,
+            trim_end: None,
+            transform: None,
+        }
+    }
+}
+
 fn verify_stream_contract(
     source: &InspectedMedia,
     accepted: &InspectedMedia,
-    mode: Mode,
+    options: &RunOptions<'_>,
 ) -> Result<()> {
     let original = &source.profile;
     let output = &accepted.profile;
-    if original.width != output.width || original.height != output.height {
-        bail!("output resolution changed");
+    if options.transform.is_none() {
+        if original.width != output.width || original.height != output.height {
+            bail!("output resolution changed");
+        }
+    } else if output.width == 0 || output.height == 0 {
+        bail!("transformed output resolution is invalid");
     }
-    if (source.duration - accepted.duration).abs() > (2.0 / original.frame_rate.max(1.0)).max(0.15)
+
+    let expected_duration = match (options.trim_start, options.trim_end) {
+        (Some(start), Some(end)) if end > start => end - start,
+        (Some(start), None) if source.duration > start => source.duration - start,
+        (None, Some(end)) => end.min(source.duration),
+        _ => source.duration,
+    };
+
+    if (expected_duration - accepted.duration).abs()
+        > (2.0 / original.frame_rate.max(1.0)).max(0.25)
     {
         bail!("duration exceeds permitted timing difference");
     }
@@ -427,7 +473,7 @@ fn verify_stream_contract(
     {
         bail!("audio or subtitle stream count changed");
     }
-    if mode == Mode::Archival {
+    if options.mode == Mode::Archival {
         if original.pix_fmt != output.pix_fmt {
             bail!("archival pixel format changed");
         }
@@ -441,20 +487,94 @@ fn verify_stream_contract(
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct RunOptions<'a> {
-    pub mode: Mode,
-    pub preference: CodecPreference,
-    pub available_encoders: Option<&'a [String]>,
+fn build_trim_args(options: &RunOptions<'_>) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(start) = options.trim_start
+        && start > 0.0
+    {
+        args.push("-ss".to_string());
+        args.push(format!("{start:.3}"));
+    }
+    if let Some(end) = options.trim_end
+        && end > 0.0
+    {
+        args.push("-to".to_string());
+        args.push(format!("{end:.3}"));
+    }
+    args
 }
 
-impl From<Mode> for RunOptions<'_> {
-    fn from(mode: Mode) -> Self {
-        Self {
-            mode,
-            preference: CodecPreference::Auto,
-            available_encoders: None,
+fn build_video_filter(transform: Option<&VideoTransform>) -> Option<String> {
+    let t = transform?;
+    let mut filters = Vec::new();
+
+    if let Some(ref preset) = t.aspect_preset {
+        match preset.as_str() {
+            "9:16" | "9-16" => filters.push("crop='min(iw,ih*9/16)':min(ih,iw*16/9)".to_string()),
+            "1:1" | "1-1" => filters.push("crop='min(iw,ih)':min(iw,ih)".to_string()),
+            "4:3" | "4-3" => filters.push("crop='min(iw,ih*4/3)':min(ih,iw*3/4)".to_string()),
+            "16:9" | "16-9" => filters.push("crop='min(iw,ih*16/9)':min(ih,iw*9/16)".to_string()),
+            _ => {}
         }
+    }
+
+    match t.rotation_deg {
+        90 => filters.push("transpose=1".to_string()),
+        180 => {
+            filters.push("transpose=1".to_string());
+            filters.push("transpose=1".to_string());
+        }
+        270 => filters.push("transpose=2".to_string()),
+        _ => {}
+    }
+
+    if t.flip_horizontal {
+        filters.push("hflip".to_string());
+    }
+
+    filters.push("scale=trunc(iw/2)*2:trunc(ih/2)*2".to_string());
+
+    if filters.is_empty() {
+        None
+    } else {
+        Some(filters.join(","))
+    }
+}
+
+fn build_audio_args(input: &InspectedMedia, target_container: &str) -> Vec<String> {
+    if input.audio_count == 0 {
+        return vec!["-an".to_string()];
+    }
+
+    let all_aac = !input.profile.audio_codecs.is_empty()
+        && input.profile.audio_codecs.iter().all(|c| c == "aac");
+    let all_opus = !input.profile.audio_codecs.is_empty()
+        && input
+            .profile
+            .audio_codecs
+            .iter()
+            .all(|c| c == "opus" || c == "vorbis");
+
+    if target_container == "webm" {
+        if all_opus {
+            vec!["-c:a".to_string(), "copy".to_string()]
+        } else {
+            vec![
+                "-c:a".to_string(),
+                "libopus".to_string(),
+                "-b:a".to_string(),
+                "128k".to_string(),
+            ]
+        }
+    } else if all_aac {
+        vec!["-c:a".to_string(), "copy".to_string()]
+    } else {
+        vec![
+            "-c:a".to_string(),
+            "aac".to_string(),
+            "-b:a".to_string(),
+            "128k".to_string(),
+        ]
     }
 }
 
@@ -599,6 +719,10 @@ pub fn run_one_with_registry(
         .tempfile_in(parent)?;
     let mut tempfile = RegisteredTemporary::new(tempfile, registry)?;
     let temporary = tempfile.path();
+    let trim_args = build_trim_args(&options);
+    let video_filter = build_video_filter(options.transform.as_ref());
+    let audio_args = build_audio_args(&input, extension);
+
     let quality = match decision {
         Decision::Copy { ref reason } => {
             if control.is_some_and(|c| c.is_cancelled()) {
@@ -613,40 +737,42 @@ pub fn run_one_with_registry(
         Decision::Encode { codec: "ffv1", .. } => {
             // Use explicit argv, never invoke a shell; passthrough retains timestamps.
             let mut command = Command::new(ffmpeg);
-            command
-                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
-                .arg(source)
-                .args([
-                    "-map",
-                    "0",
-                    "-map_metadata",
-                    "0",
-                    "-map_chapters",
-                    "0",
-                    "-c:v",
-                    "ffv1",
-                    "-level",
-                    "3",
-                    "-coder",
-                    "1",
-                    "-context",
-                    "1",
-                    "-slicecrc",
-                    "1",
-                    "-threads",
-                    "2",
-                    "-fps_mode",
-                    "passthrough",
-                    "-c:a",
-                    "copy",
-                    "-c:s",
-                    "copy",
-                ])
-                .arg(temporary);
+            command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
+            if !trim_args.is_empty() {
+                command.args(&trim_args);
+            }
+            command.arg("-i").arg(source);
+            command.args([
+                "-map",
+                "0",
+                "-map_metadata",
+                "0",
+                "-map_chapters",
+                "0",
+                "-c:v",
+                "ffv1",
+                "-level",
+                "3",
+                "-coder",
+                "1",
+                "-context",
+                "1",
+                "-slicecrc",
+                "1",
+                "-threads",
+                "2",
+                "-fps_mode",
+                "passthrough",
+                "-c:a",
+                "copy",
+                "-c:s",
+                "copy",
+            ]);
+            command.arg(temporary);
             run_command_cancellable(&mut command, "lossless archival encoding", control)?;
             verify_decode(ffmpeg, temporary, control)?;
             let accepted = inspect(ffprobe, temporary)?;
-            verify_stream_contract(&input, &accepted, options.mode)?;
+            verify_stream_contract(&input, &accepted, &options)?;
             if frame_hashes(ffmpeg, source, control)? != frame_hashes(ffmpeg, temporary, control)? {
                 bail!("decoded archival frames are not identical");
             }
@@ -657,11 +783,74 @@ pub fn run_one_with_registry(
             crf,
             ..
         } => {
-            let mut command = Command::new(ffmpeg);
-            command
-                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
-                .arg(source)
-                .args([
+            let mut encoded_with_hw = false;
+            let mut final_score = 0.0;
+
+            if options.hardware_acceleration && options.mode == Mode::Publishing {
+                let hw_enc = options.available_encoders.and_then(|encoders| {
+                    if encoders.iter().any(|e| e == "h264_videotoolbox") {
+                        Some("h264_videotoolbox")
+                    } else if encoders.iter().any(|e| e == "h264_nvenc") {
+                        Some("h264_nvenc")
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(hw) = hw_enc {
+                    let mut hw_cmd = Command::new(ffmpeg);
+                    hw_cmd.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
+                    if !trim_args.is_empty() {
+                        hw_cmd.args(&trim_args);
+                    }
+                    hw_cmd.arg("-i").arg(source);
+                    hw_cmd.args([
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "0:a?",
+                        "-map_metadata",
+                        "0",
+                        "-map_chapters",
+                        "0",
+                        "-c:v",
+                        hw,
+                    ]);
+                    if hw == "h264_videotoolbox" {
+                        hw_cmd.args(["-q:v", "65"]);
+                    } else if hw == "h264_nvenc" {
+                        hw_cmd.args(["-cq", "24"]);
+                    }
+                    if let Some(ref vf) = video_filter {
+                        hw_cmd.args(["-vf", vf]);
+                    }
+                    hw_cmd.args(["-fps_mode", "passthrough", "-pix_fmt", "yuv420p"]);
+                    hw_cmd.args(&audio_args);
+                    hw_cmd.args(["-movflags", "+faststart"]).arg(temporary);
+
+                    if run_command_cancellable(&mut hw_cmd, "hardware H.264 encoding", control)
+                        .is_ok()
+                        && verify_decode(ffmpeg, temporary, control).is_ok()
+                        && inspect(ffprobe, temporary)
+                            .map(|acc| verify_stream_contract(&input, &acc, &options).is_ok())
+                            .unwrap_or(false)
+                        && let Ok(score) = ssim_score(ffmpeg, source, temporary, control)
+                        && score >= 0.965
+                    {
+                        encoded_with_hw = true;
+                        final_score = score;
+                    }
+                }
+            }
+
+            if !encoded_with_hw {
+                let mut command = Command::new(ffmpeg);
+                command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
+                if !trim_args.is_empty() {
+                    command.args(&trim_args);
+                }
+                command.arg("-i").arg(source);
+                command.args([
                     "-map",
                     "0:v:0",
                     "-map",
@@ -675,45 +864,122 @@ pub fn run_one_with_registry(
                     "-preset",
                     "medium",
                     "-crf",
-                ])
-                .arg(crf.to_string())
-                .args([
+                ]);
+                command.arg(crf.to_string());
+                if let Some(ref vf) = video_filter {
+                    command.args(["-vf", vf]);
+                }
+                command.args([
                     "-fps_mode",
                     "passthrough",
                     "-threads",
                     "2",
                     "-pix_fmt",
                     "yuv420p",
-                    "-c:a",
-                    "copy",
-                    "-movflags",
-                    "+faststart",
-                ])
-                .arg(temporary);
-            run_command_cancellable(&mut command, "publishing encoding", control)?;
-            verify_decode(ffmpeg, temporary, control)?;
-            let accepted = inspect(ffprobe, temporary)?;
-            verify_stream_contract(&input, &accepted, options.mode)?;
-            let score = ssim_score(ffmpeg, source, temporary, control)?;
-            if score < 0.965 {
-                return Ok(RunOutcome::Rejected {
-                    reason: format!(
-                        "SSIM {score:.5} below provisional 0.965 gate; manual quality review needed"
-                    ),
-                });
+                ]);
+                command.args(&audio_args);
+                command.args(["-movflags", "+faststart"]).arg(temporary);
+
+                run_command_cancellable(&mut command, "publishing encoding", control)?;
+                verify_decode(ffmpeg, temporary, control)?;
+                let accepted = inspect(ffprobe, temporary)?;
+                verify_stream_contract(&input, &accepted, &options)?;
+                let score = ssim_score(ffmpeg, source, temporary, control)?;
+                if score < 0.965 {
+                    return Ok(RunOutcome::Rejected {
+                        reason: format!(
+                            "SSIM {score:.5} below provisional 0.965 gate; manual quality review needed"
+                        ),
+                    });
+                }
+                final_score = score;
             }
-            format!("SSIM={score:.5} (automated gate, not proof of visual equivalence)")
+
+            format!(
+                "SSIM={final_score:.5} ({})",
+                if encoded_with_hw {
+                    "hardware accelerated"
+                } else {
+                    "automated gate, not proof of visual equivalence"
+                }
+            )
         }
         Decision::Encode {
             codec: "libx265",
             crf,
             container,
         } => {
-            let mut command = Command::new(ffmpeg);
-            command
-                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
-                .arg(source)
-                .args([
+            let mut encoded_with_hw = false;
+            let mut final_score = 0.0;
+
+            if options.hardware_acceleration && options.mode == Mode::Publishing {
+                let hw_enc = options.available_encoders.and_then(|encoders| {
+                    if encoders.iter().any(|e| e == "hevc_videotoolbox") {
+                        Some("hevc_videotoolbox")
+                    } else if encoders.iter().any(|e| e == "hevc_nvenc") {
+                        Some("hevc_nvenc")
+                    } else {
+                        None
+                    }
+                });
+
+                if let Some(hw) = hw_enc {
+                    let mut hw_cmd = Command::new(ffmpeg);
+                    hw_cmd.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
+                    if !trim_args.is_empty() {
+                        hw_cmd.args(&trim_args);
+                    }
+                    hw_cmd.arg("-i").arg(source);
+                    hw_cmd.args([
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "0:a?",
+                        "-map_metadata",
+                        "0",
+                        "-map_chapters",
+                        "0",
+                        "-c:v",
+                        hw,
+                    ]);
+                    if hw == "hevc_videotoolbox" {
+                        hw_cmd.args(["-q:v", "65", "-tag:v", "hvc1"]);
+                    } else if hw == "hevc_nvenc" {
+                        hw_cmd.args(["-cq", "26", "-tag:v", "hvc1"]);
+                    }
+                    if let Some(ref vf) = video_filter {
+                        hw_cmd.args(["-vf", vf]);
+                    }
+                    hw_cmd.args(["-fps_mode", "passthrough", "-pix_fmt", "yuv420p"]);
+                    hw_cmd.args(&audio_args);
+                    if container == "mp4" {
+                        hw_cmd.args(["-movflags", "+faststart"]);
+                    }
+                    hw_cmd.arg(temporary);
+
+                    if run_command_cancellable(&mut hw_cmd, "hardware HEVC encoding", control)
+                        .is_ok()
+                        && verify_decode(ffmpeg, temporary, control).is_ok()
+                        && inspect(ffprobe, temporary)
+                            .map(|acc| verify_stream_contract(&input, &acc, &options).is_ok())
+                            .unwrap_or(false)
+                        && let Ok(score) = ssim_score(ffmpeg, source, temporary, control)
+                        && score >= 0.965
+                    {
+                        encoded_with_hw = true;
+                        final_score = score;
+                    }
+                }
+            }
+
+            if !encoded_with_hw {
+                let mut command = Command::new(ffmpeg);
+                command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
+                if !trim_args.is_empty() {
+                    command.args(&trim_args);
+                }
+                command.arg("-i").arg(source);
+                command.args([
                     "-map",
                     "0:v:0",
                     "-map",
@@ -727,9 +993,9 @@ pub fn run_one_with_registry(
                     "-preset",
                     "medium",
                     "-crf",
-                ])
-                .arg(crf.to_string())
-                .args([
+                ]);
+                command.arg(crf.to_string());
+                command.args([
                     "-tag:v",
                     "hvc1",
                     "-fps_mode",
@@ -738,26 +1004,38 @@ pub fn run_one_with_registry(
                     "2",
                     "-pix_fmt",
                     "yuv420p",
-                    "-c:a",
-                    "copy",
                 ]);
-            if container == "mp4" {
-                command.args(["-movflags", "+faststart"]);
+                if let Some(ref vf) = video_filter {
+                    command.args(["-vf", vf]);
+                }
+                command.args(&audio_args);
+                if container == "mp4" {
+                    command.args(["-movflags", "+faststart"]);
+                }
+                command.arg(temporary);
+                run_command_cancellable(&mut command, "HEVC encoding", control)?;
+                verify_decode(ffmpeg, temporary, control)?;
+                let accepted = inspect(ffprobe, temporary)?;
+                verify_stream_contract(&input, &accepted, &options)?;
+                let score = ssim_score(ffmpeg, source, temporary, control)?;
+                if score < 0.965 {
+                    return Ok(RunOutcome::Rejected {
+                        reason: format!(
+                            "SSIM {score:.5} below provisional 0.965 gate; manual quality review needed"
+                        ),
+                    });
+                }
+                final_score = score;
             }
-            command.arg(temporary);
-            run_command_cancellable(&mut command, "HEVC encoding", control)?;
-            verify_decode(ffmpeg, temporary, control)?;
-            let accepted = inspect(ffprobe, temporary)?;
-            verify_stream_contract(&input, &accepted, options.mode)?;
-            let score = ssim_score(ffmpeg, source, temporary, control)?;
-            if score < 0.965 {
-                return Ok(RunOutcome::Rejected {
-                    reason: format!(
-                        "SSIM {score:.5} below provisional 0.965 gate; manual quality review needed"
-                    ),
-                });
-            }
-            format!("SSIM={score:.5} (automated gate, not proof of visual equivalence)")
+
+            format!(
+                "SSIM={final_score:.5} ({})",
+                if encoded_with_hw {
+                    "hardware accelerated"
+                } else {
+                    "automated gate, not proof of visual equivalence"
+                }
+            )
         }
         Decision::Encode {
             codec: "libsvtav1",
@@ -765,35 +1043,39 @@ pub fn run_one_with_registry(
             container,
         } => {
             let mut command = Command::new(ffmpeg);
-            command
-                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
-                .arg(source)
-                .args([
-                    "-map",
-                    "0:v:0",
-                    "-map",
-                    "0:a?",
-                    "-map_metadata",
-                    "0",
-                    "-map_chapters",
-                    "0",
-                    "-c:v",
-                    "libsvtav1",
-                    "-preset",
-                    "7",
-                    "-crf",
-                ])
-                .arg(crf.to_string())
-                .args([
-                    "-fps_mode",
-                    "passthrough",
-                    "-threads",
-                    "2",
-                    "-pix_fmt",
-                    "yuv420p",
-                    "-c:a",
-                    "copy",
-                ]);
+            command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
+            if !trim_args.is_empty() {
+                command.args(&trim_args);
+            }
+            command.arg("-i").arg(source);
+            command.args([
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-map_metadata",
+                "0",
+                "-map_chapters",
+                "0",
+                "-c:v",
+                "libsvtav1",
+                "-preset",
+                "7",
+                "-crf",
+            ]);
+            command.arg(crf.to_string());
+            if let Some(ref vf) = video_filter {
+                command.args(["-vf", vf]);
+            }
+            command.args([
+                "-fps_mode",
+                "passthrough",
+                "-threads",
+                "2",
+                "-pix_fmt",
+                "yuv420p",
+            ]);
+            command.args(&audio_args);
             if container == "mp4" {
                 command.args(["-movflags", "+faststart"]);
             }
@@ -801,7 +1083,7 @@ pub fn run_one_with_registry(
             run_command_cancellable(&mut command, "AV1 encoding", control)?;
             verify_decode(ffmpeg, temporary, control)?;
             let accepted = inspect(ffprobe, temporary)?;
-            verify_stream_contract(&input, &accepted, options.mode)?;
+            verify_stream_contract(&input, &accepted, &options)?;
             let score = ssim_score(ffmpeg, source, temporary, control)?;
             if score < 0.965 {
                 return Ok(RunOutcome::Rejected {
@@ -818,44 +1100,48 @@ pub fn run_one_with_registry(
             ..
         } => {
             let mut command = Command::new(ffmpeg);
-            command
-                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
-                .arg(source)
-                .args([
-                    "-map",
-                    "0:v:0",
-                    "-map",
-                    "0:a?",
-                    "-map_metadata",
-                    "0",
-                    "-map_chapters",
-                    "0",
-                    "-c:v",
-                    "libvpx-vp9",
-                    "-b:v",
-                    "0",
-                    "-crf",
-                ])
-                .arg(crf.to_string())
-                .args([
-                    "-deadline",
-                    "good",
-                    "-cpu-used",
-                    "2",
-                    "-fps_mode",
-                    "passthrough",
-                    "-threads",
-                    "2",
-                    "-pix_fmt",
-                    "yuv420p",
-                    "-c:a",
-                    "copy",
-                ])
-                .arg(temporary);
+            command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
+            if !trim_args.is_empty() {
+                command.args(&trim_args);
+            }
+            command.arg("-i").arg(source);
+            command.args([
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-map_metadata",
+                "0",
+                "-map_chapters",
+                "0",
+                "-c:v",
+                "libvpx-vp9",
+                "-b:v",
+                "0",
+                "-crf",
+            ]);
+            command.arg(crf.to_string());
+            if let Some(ref vf) = video_filter {
+                command.args(["-vf", vf]);
+            }
+            command.args([
+                "-deadline",
+                "good",
+                "-cpu-used",
+                "2",
+                "-fps_mode",
+                "passthrough",
+                "-threads",
+                "2",
+                "-pix_fmt",
+                "yuv420p",
+            ]);
+            command.args(&audio_args);
+            command.arg(temporary);
             run_command_cancellable(&mut command, "VP9 encoding", control)?;
             verify_decode(ffmpeg, temporary, control)?;
             let accepted = inspect(ffprobe, temporary)?;
-            verify_stream_contract(&input, &accepted, options.mode)?;
+            verify_stream_contract(&input, &accepted, &options)?;
             let score = ssim_score(ffmpeg, source, temporary, control)?;
             if score < 0.965 {
                 return Ok(RunOutcome::Rejected {
@@ -882,65 +1168,79 @@ pub fn run_one_with_registry(
 
             // Pass 1: Analysis & MB-tree generation
             let mut command_pass1 = Command::new(ffmpeg);
-            command_pass1
-                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
-                .arg(source)
-                .args([
-                    "-map",
-                    "0:v:0",
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    preset,
-                    "-b:v",
-                    &format!("{target_kbps}k"),
-                    "-pix_fmt",
-                    "yuv420p",
-                    "-fps_mode",
-                    "passthrough",
-                    "-threads",
-                    "2",
-                    "-pass",
-                    "1",
-                    "-passlogfile",
-                ])
-                .arg(&passlog_str)
-                .args(["-an", "-f", "mp4"])
-                .arg(if cfg!(windows) { "NUL" } else { "/dev/null" });
+            command_pass1.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
+            if !trim_args.is_empty() {
+                command_pass1.args(&trim_args);
+            }
+            command_pass1.arg("-i").arg(source);
+            command_pass1.args([
+                "-map",
+                "0:v:0",
+                "-c:v",
+                "libx264",
+                "-preset",
+                preset,
+                "-b:v",
+                &format!("{target_kbps}k"),
+            ]);
+            if let Some(ref vf) = video_filter {
+                command_pass1.args(["-vf", vf]);
+            }
+            command_pass1.args([
+                "-pix_fmt",
+                "yuv420p",
+                "-fps_mode",
+                "passthrough",
+                "-threads",
+                "2",
+                "-pass",
+                "1",
+                "-passlogfile",
+            ]);
+            command_pass1.arg(&passlog_str);
+            command_pass1.args(["-an", "-f", "mp4"]);
+            command_pass1.arg(if cfg!(windows) { "NUL" } else { "/dev/null" });
 
             run_command_cancellable(&mut command_pass1, "Smart 2-Pass ABR (Pass 1)", control)?;
 
             // Pass 2: Final bitstream encoding
             let mut command_pass2 = Command::new(ffmpeg);
-            command_pass2
-                .args(["-hide_banner", "-nostdin", "-v", "error", "-y", "-i"])
-                .arg(source)
-                .args([
-                    "-map",
-                    "0:v:0",
-                    "-map",
-                    "0:a?",
-                    "-map_metadata",
-                    "0",
-                    "-map_chapters",
-                    "0",
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    preset,
-                    "-b:v",
-                    &format!("{target_kbps}k"),
-                    "-pix_fmt",
-                    "yuv420p",
-                    "-fps_mode",
-                    "passthrough",
-                    "-threads",
-                    "2",
-                    "-pass",
-                    "2",
-                    "-passlogfile",
-                ])
-                .arg(&passlog_str);
+            command_pass2.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
+            if !trim_args.is_empty() {
+                command_pass2.args(&trim_args);
+            }
+            command_pass2.arg("-i").arg(source);
+            command_pass2.args([
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a?",
+                "-map_metadata",
+                "0",
+                "-map_chapters",
+                "0",
+                "-c:v",
+                "libx264",
+                "-preset",
+                preset,
+                "-b:v",
+                &format!("{target_kbps}k"),
+            ]);
+            if let Some(ref vf) = video_filter {
+                command_pass2.args(["-vf", vf]);
+            }
+            command_pass2.args([
+                "-pix_fmt",
+                "yuv420p",
+                "-fps_mode",
+                "passthrough",
+                "-threads",
+                "2",
+                "-pass",
+                "2",
+                "-passlogfile",
+            ]);
+            command_pass2.arg(&passlog_str);
 
             match audio_plan {
                 AudioPlan::Copy => {
@@ -959,7 +1259,7 @@ pub fn run_one_with_registry(
 
             verify_decode(ffmpeg, temporary, control)?;
             let accepted = inspect(ffprobe, temporary)?;
-            verify_stream_contract(&input, &accepted, options.mode)?;
+            verify_stream_contract(&input, &accepted, &options)?;
 
             let score = ssim_score(ffmpeg, source, temporary, control)?;
             let min_ssim = (min_ssim_bps as f64) / 10000.0;

@@ -62,6 +62,7 @@ fn real_synthetic_encoding_to_hevc_produces_verified_mp4_and_preserves_source() 
             mode: Mode::Publishing,
             preference: CodecPreference::Hevc,
             available_encoders: Some(&available),
+            ..Default::default()
         },
         None,
     )
@@ -115,6 +116,7 @@ fn real_synthetic_encoding_to_vp9_produces_verified_webm_and_preserves_source() 
             mode: Mode::Publishing,
             preference: CodecPreference::Vp9,
             available_encoders: Some(&available),
+            ..Default::default()
         },
         None,
     )
@@ -168,6 +170,7 @@ fn real_synthetic_encoding_to_av1_produces_verified_mp4_when_encoder_available()
             mode: Mode::Publishing,
             preference: CodecPreference::Av1,
             available_encoders: Some(&available),
+            ..Default::default()
         },
         None,
     )

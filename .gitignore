@@ -6,6 +6,7 @@ target/
 src-tauri/target/
 core/target/
 src-tauri/gen/schemas/
+src-tauri/gen/
 
 # Node / Bun
 node_modules/
@@ -30,7 +31,9 @@ pnpm-debug.log*
 .idea/
 .cursor/
 .DS_Store
+**/.DS_Store
 ._*
+**/._*
 .Spotlight-V100
 .Trashes
 *.suo
@@ -39,6 +42,12 @@ pnpm-debug.log*
 *.sln
 *.sw?
 Thumbs.db
+
+# Python bytecode and caches
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
 
 # Environment variables, credentials & secrets
 .env
@@ -58,6 +67,7 @@ service-account*.json
 token.json
 id_rsa*
 id_ed25519*
+agent-kernel/env-vault/
 
 # Agent harness state and local symlinked skills
 .fable/
@@ -68,6 +78,9 @@ id_ed25519*
 .no-mistakes/
 .agents/skills/*
 !.agents/skills/mar2i-ops/
+*worktrees/
+*.wave.*
+coordinator.*/
 
 # Caches and test coverage
 coverage/
