@@ -72,6 +72,7 @@ type UiState = {
   activeAspectFile: string | null
   activeProbeFile: string | null
   islandExpanded: boolean
+  analyzing: boolean
 }
 
 const state: UiState = {
@@ -104,6 +105,7 @@ const state: UiState = {
   activeAspectFile: null,
   activeProbeFile: null,
   islandExpanded: false,
+  analyzing: false,
 }
 
 const root = document.querySelector<HTMLDivElement>('#app')!
@@ -198,7 +200,7 @@ function screenHeading(title: string, subtitle?: string, back = false): string {
 }
 
 function folderField(label: string, name: string, action: string, id: string): string {
-  return `<div class="folder-row"><label for="${id}">${label}</label><div class="folder-value" id="${id}">${icon('folder', 21)}<span>${escapeHtml(name)}</span></div>${button('استعراض', action, 'outline')}</div>`
+  return `<div class="folder-row"><label for="${id}">${label}</label><div class="folder-value" id="${id}" data-action="${action}" role="button" tabindex="0" aria-label="${label}: ${escapeHtml(name)}">${icon('folder', 21)}<span>${escapeHtml(name)}</span></div>${button('استعراض', action, 'outline')}</div>`
 }
 
 function modeChoices(): string {
@@ -213,6 +215,10 @@ function modeChoices(): string {
 }
 
 function renderNew(): string {
+  const analyzeLabel = state.analyzing
+    ? 'جارٍ فحص الملفات...'
+    : (isDesktop ? 'تحليل الفيديوهات' : 'تحليل الفيديوهات وتوقع التوفير')
+
   return `<div class="page page-new">${screenHeading('دفعة جديدة', 'حدد ملفات الفيديو ووجهتها، ثم اختر طريقة المعالجة والترميز المعتمد')}
     <section class="folder-section" aria-label="المجلدات">
       ${folderField('مجلد المصدر', state.sourceName, 'select-source', 'source-value')}
@@ -220,19 +226,31 @@ function renderNew(): string {
       <input type="file" id="source-picker" webkitdirectory multiple hidden aria-label="اختيار مجلد المصدر" />
     </section>
     <section class="choice-section"><h2>الغرض من الملفات</h2>${modeChoices()}</section>
-    <section class="codec-preview"><div class="field-title">اختيار الترميز</div><div class="select-surface">${getCodec(state.codec).name}${icon('chevron', 17)}</div>
+    <section class="codec-preview">
+      <label class="field-title" for="codec-select">اختيار الترميز</label>
+      <div class="select-wrapper">
+        <select id="codec-select" class="select-surface" aria-label="اختيار الترميز">
+          <option value="auto" ${state.codec === 'auto' ? 'selected' : ''}>تلقائي (الأنسب لكل فيديو)</option>
+          <option value="h264" ${state.codec === 'h264' ? 'selected' : ''}>H.264 (AVC) - توافق شامل مع الأجهزة</option>
+          <option value="hevc" ${state.codec === 'hevc' ? 'selected' : ''}>HEVC (H.265) - ضغط عالي الكفاءة</option>
+          <option value="av1" ${state.codec === 'av1' ? 'selected' : ''}>AV1 - أقصى توفير للحجم</option>
+          <option value="vp9" ${state.codec === 'vp9' ? 'selected' : ''}>VP9 - متوافق مع متصفحات الويب</option>
+          <option value="ffv1" ${state.codec === 'ffv1' ? 'selected' : ''}>FFV1 - أرشفة رقمية غير منقوصة</option>
+        </select>
+        <span class="select-chevron" aria-hidden="true">${icon('chevron', 17)}</span>
+      </div>
       <button class="help-trigger" type="button" data-action="show-selected-help" aria-label="شرح اختيار الترميز">${icon('help', 22)}</button>
       <p>${state.codec === 'auto' ? 'يختار التطبيق الأنسب لكل فيديو بحسب الهدف والجودة المطلوبة' : getCodec(state.codec).description}</p>
     </section>
     <button class="text-action" type="button" data-screen="options">عرض خيارات الضغط والتقديرات ${icon('arrow', 17)}</button>
-    <footer class="page-actions">${button(isDesktop ? 'تحليل الفيديوهات' : 'تحليل الفيديوهات وتوقع التوفير', 'analyze', 'primary')}${button('إلغاء', 'reset-new', 'outline')}</footer>
+    <footer class="page-actions">${button(analyzeLabel, 'analyze', 'primary', state.analyzing ? 'disabled' : '')}${button('إلغاء', 'reset-new', 'outline')}</footer>
   </div>`
 }
 
 function codecRow(codec: typeof codecs[number]): string {
   const active = state.codec === codec.id
 
-  return `<div class="codec-row${active ? ' selected' : ''}" role="row">
+  return `<div class="codec-row${active ? ' selected' : ''}" data-codec="${codec.id}" role="row">
     <div class="codec-name" role="cell"><input type="radio" name="codec" value="${codec.id}" ${active ? 'checked' : ''} aria-label="اختيار ${codec.name}" /><strong dir="auto">${codec.name}</strong><button class="tiny-help${state.help === codec.id ? ' is-current' : ''}" data-help="${codec.id}" type="button" aria-label="شرح ${codec.name}">${icon('help', 18)}</button></div>
     <span role="cell">${codec.size}</span><span role="cell">${codec.speed}</span><span role="cell">${codec.compatibility}</span>
   </div>`
@@ -793,7 +811,8 @@ function changeScreen(screen: Screen): void {
   state.reportMenu = false
   state.dialog = null
   render()
-  document.querySelector<HTMLElement>('#main-content')?.focus({ preventScroll: true })
+  document.querySelector<HTMLElement>('.workspace')?.scrollTo(0, 0)
+  window.scrollTo(0, 0)
 }
 
 function stopTimer(): void {
@@ -894,7 +913,10 @@ async function pollNative(): Promise<void> {
       if (current.completed + current.skipped + current.failed > 0 && !current.cancelled) {
         if (nativeTimer !== null) clearInterval(nativeTimer)
         nativeTimer = null
-        changeScreen('results')
+
+        if (state.screen === 'progress') {
+          changeScreen('results')
+        }
 
         return
       }
@@ -919,6 +941,7 @@ async function handleNativeAction(action: string): Promise<boolean> {
       state.sourcePath = chosen
       state.sourceName = chosen.split(/[\\/]/).filter(Boolean).at(-1) ?? chosen
       state.analysis = null
+      state.notice = null
       render()
     }
 
@@ -927,6 +950,20 @@ async function handleNativeAction(action: string): Promise<boolean> {
 
   if (action === 'select-output') {
     await selectOutputFolder()
+
+    return true
+  }
+
+  if (action === 'reset-new') {
+    state.sourcePath = null
+    state.sourceName = isDesktop ? 'لم يتم اختيار مجلد' : 'فيديوهات موسم الحج 1447'
+    state.outputPath = null
+    state.outputName = isDesktop ? 'لم يتم اختيار مجلد' : 'النسخ المضغوطة'
+    state.analysis = null
+    state.notice = null
+    state.sourceCount = null
+    state.analyzing = false
+    render()
 
     return true
   }
@@ -944,16 +981,35 @@ async function handleNativeAction(action: string): Promise<boolean> {
       return true
     }
 
-    state.notice = 'جارٍ تحليل الملفات وتوقع التوفير باستخدام FFprobe'
+    if (state.sourcePath.trim() === state.outputPath.trim()) {
+      showError('مجلد المصدر ومجلد الحفظ يجب أن يكونا منفصلين ولا يمكن أن يتطابقا')
+
+      return true
+    }
+
+    state.analyzing = true
+    state.notice = 'جارٍ فحص ملفات الفيديو وتوقع التوفير باستخدام FFprobe...'
     render()
 
     try {
       const scan = await analyzeDirectory(state.sourcePath, state.outputPath, state.mode)
+      state.analyzing = false
+
+      if (scan.total === 0) {
+        state.analysis = scan
+        state.sourceCount = 0
+        state.notice = 'لم يتم العثور على أي ملفات فيديو صالحة في مجلد المصدر المحدد (الصيغ المدعومة: mp4, mov, mkv, avi, mxf, webm)'
+        render()
+
+        return true
+      }
+
       state.analysis = scan
       state.sourceCount = scan.total
       state.notice = null
       changeScreen('review')
     } catch (error) {
+      state.analyzing = false
       showError(error instanceof Error ? error : String(error))
     }
 
@@ -1059,6 +1115,17 @@ root.addEventListener('click', async (event) => {
       state.help = preset.codec
       render()
     }
+
+    return
+  }
+
+  const codecChoice = target.closest<HTMLElement>('[data-codec]')
+
+  if (codecChoice && !target.closest('.tiny-help') && target.tagName !== 'INPUT') {
+    // SAFETY: data-codec dataset value maps strictly to CodecId union members
+    state.codec = codecChoice.dataset.codec as CodecId
+    state.help = state.codec
+    render()
 
     return
   }
@@ -1181,7 +1248,17 @@ root.addEventListener('click', async (event) => {
       changeScreen('options')
       break
     case 'back-new':
+      changeScreen('new')
+      break
     case 'reset-new':
+      state.sourcePath = null
+      state.sourceName = isDesktop ? 'لم يتم اختيار مجلد' : 'فيديوهات موسم الحج 1447'
+      state.outputPath = null
+      state.outputName = isDesktop ? 'لم يتم اختيار مجلد' : 'النسخ المضغوطة'
+      state.analysis = null
+      state.notice = null
+      state.sourceCount = null
+      state.analyzing = false
       changeScreen('new')
       break
     case 'show-selected-help':
@@ -1251,10 +1328,15 @@ root.addEventListener('click', async (event) => {
 })
 
 root.addEventListener('change', (event) => {
-  // SAFETY: Form change events originate from input controls
-  const target = event.target as HTMLInputElement
+  // SAFETY: Form change events originate from input and select controls
+  const target = event.target as HTMLInputElement | HTMLSelectElement
 
-  if (target.id === 'source-picker' && target.files?.length) {
+  if (target.id === 'codec-select') {
+    // SAFETY: Select element values map strictly to CodecId union members
+    state.codec = target.value as CodecId
+    state.help = state.codec
+    render()
+  } else if (target.id === 'source-picker' && 'files' in target && target.files?.length) {
     const first = target.files[0]
     state.sourceName = first.webkitRelativePath.split('/')[0] || first.name
     state.sourceCount = [...target.files].filter((file) => /\.(mp4|mov|mkv|avi|webm|mxf|mts|m2ts)$/i.test(file.name)).length
@@ -1264,7 +1346,7 @@ root.addEventListener('change', (event) => {
     state.codec = target.value as CodecId
     state.help = state.codec
     render()
-  } else if (target.id === 'hardware') {
+  } else if (target.id === 'hardware' && 'checked' in target) {
     state.hardware = target.checked
     render()
   } else if (target.name === 'resource') {

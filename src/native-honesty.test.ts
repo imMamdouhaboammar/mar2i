@@ -3,8 +3,9 @@ import { describe, expect, it } from 'bun:test'
 
 describe('Native desktop truthfulness', () => {
   it('shows no synthetic results, official certificate or invented throughput before a batch exists', async () => {
-    // SAFETY: Mocking Tauri internal IPC interface in test environment
     type MockResponse = string | { availableEncoders: string[]; recommendedH264: string | null; recommendedHevc: string | null }
+
+    // SAFETY: Mocking window internals for Tauri desktop unit testing
     const win = window as typeof window & { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<MockResponse> } }
     win.__TAURI_INTERNALS__ = { invoke: async (cmd) => {
       if (cmd === 'report_content' || cmd === 'save_report_file') throw new Error('Report not available')
@@ -37,6 +38,21 @@ describe('Native desktop truthfulness', () => {
     expect(document.querySelector('[role="status"]')?.textContent).toContain('Report not available')
 
     document.querySelector<HTMLButtonElement>('[data-screen="new"]')?.click()
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    const codecSelect = document.querySelector<HTMLSelectElement>('#codec-select')
+    expect(codecSelect).not.toBeNull()
+    expect(codecSelect?.tagName).toBe('SELECT')
+    expect(document.querySelector('.folder-value[data-action="select-source"]')).not.toBeNull()
+
+    if (codecSelect) {
+      codecSelect.value = 'hevc'
+      // SAFETY: Using window-scoped Event class required by happy-dom
+      codecSelect.dispatchEvent(new (window as any).Event('change', { bubbles: true }))
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(document.querySelector('.codec-preview p')?.textContent).toContain('يوفر عادةً ضغطًا أعلى من H.264')
+    }
+
     document.querySelector<HTMLButtonElement>('[data-screen="options"]')?.click()
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(Boolean(document.querySelector('[data-preset-id]'))).toBe(false)

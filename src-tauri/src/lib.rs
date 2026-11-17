@@ -560,9 +560,24 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::resolve_media_binary;
+    use super::{analyze_directory, resolve_media_binary};
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn analyze_directory_handles_empty_folder() {
+        let tmp = tempdir().unwrap();
+        let in_dir = tmp.path().join("in");
+        let out_dir = tmp.path().join("out");
+        fs::create_dir_all(&in_dir).unwrap();
+        fs::create_dir_all(&out_dir).unwrap();
+        let res = analyze_directory(
+            in_dir.to_str().unwrap().to_string(),
+            out_dir.to_str().unwrap().to_string(),
+            "publish".to_string(),
+        ).unwrap();
+        assert_eq!(res.total, 0);
+    }
 
     #[test]
     fn resolve_media_binary_prioritizes_bundled_resources() {
