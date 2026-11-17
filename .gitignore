@@ -67,3 +67,18 @@ coverage/
 *.AppImage
 *.deb
 *.rpm
+
+# Bundled offline media binaries (downloaded/staged at build time)
+src-tauri/bin/*
+!src-tauri/bin/.gitkeep
+!src-tauri/bin/MANIFEST.json
+
+# Release distributions and CI temporary staging
+release-dist/*
+!release-dist/SHA256SUMS.txt
+release-dist/macos/
+release-dist/windows/
+release-artifacts/
+*.zip
+*.tar.gz
+*.tgz
