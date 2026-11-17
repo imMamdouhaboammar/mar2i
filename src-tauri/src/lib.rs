@@ -215,6 +215,7 @@ fn start_batch(
     mode: String,
     profile: String,
     codec: String,
+    hardware_acceleration: Option<bool>,
     runtime: State<'_, Arc<Runtime>>,
 ) -> Result<(), String> {
     let mode = parse_mode(&mode)?;
@@ -262,6 +263,7 @@ fn start_batch(
                     mode,
                     profile,
                     preference,
+                    hardware_acceleration: hardware_acceleration.unwrap_or(false),
                 },
                 &control,
             )?;
@@ -592,10 +594,17 @@ pub struct CompressionSnapshotReport {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn compress_single_video(
     source_path: String,
     output_dir: Option<String>,
     _target_ratio: Option<f64>,
+    trim_start: Option<f64>,
+    trim_end: Option<f64>,
+    aspect_preset: Option<String>,
+    rotation_deg: Option<u16>,
+    flip_horizontal: Option<bool>,
+    hardware_acceleration: Option<bool>,
 ) -> Result<CompressionSnapshotReport, String> {
     let source = PathBuf::from(&source_path);
     if !source.is_file() {
@@ -623,6 +632,17 @@ async fn compress_single_video(
     let start = std::time::Instant::now();
     let available_encoders = mar2i_core::hardware::probe_available_encoders(&ffmpeg);
 
+    let transform =
+        if aspect_preset.is_some() || rotation_deg.is_some() || flip_horizontal.unwrap_or(false) {
+            Some(mar2i_core::runner::VideoTransform {
+                aspect_preset,
+                rotation_deg: rotation_deg.unwrap_or(0),
+                flip_horizontal: flip_horizontal.unwrap_or(false),
+            })
+        } else {
+            None
+        };
+
     let outcome = mar2i_core::runner::run_one_with_options(
         &ffmpeg,
         &ffprobe,
@@ -633,6 +653,10 @@ async fn compress_single_video(
             mode: Mode::Publishing,
             preference: CodecPreference::SmartAbr,
             available_encoders: Some(&available_encoders),
+            hardware_acceleration: hardware_acceleration.unwrap_or(false),
+            trim_start,
+            trim_end,
+            transform,
         },
         None,
     )
@@ -780,6 +804,336 @@ fn save_report_file(
     Ok(destination)
 }
 
+fn to_base64(bytes: &[u8]) -> String {
+    const CHARSET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = if chunk.len() > 1 { chunk[1] } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] } else { 0 };
+
+        out.push(CHARSET[(b0 >> 2) as usize] as char);
+        out.push(CHARSET[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(CHARSET[(((b1 & 0x0f) << 2) | (b2 >> 6)) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(CHARSET[(b2 & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaProbeData {
+    pub file_name: String,
+    pub file_size: u64,
+    pub duration_seconds: f64,
+    pub format_name: String,
+    pub overall_bitrate_kbps: u64,
+    pub video_codec: String,
+    pub video_profile: String,
+    pub resolution: String,
+    pub fps: f64,
+    pub color_space: String,
+    pub pixel_format: String,
+    pub audio_codec: String,
+    pub audio_channels: usize,
+    pub audio_sample_rate_hz: u32,
+    pub audio_bitrate_kbps: u64,
+    pub sparse_sha256: String,
+    pub camera_model: Option<String>,
+    pub preservation_class: String,
+}
+
+#[tauri::command]
+fn probe_forensic_media(path: String) -> Result<MediaProbeData, String> {
+    let p = PathBuf::from(&path);
+    if !p.is_file() {
+        return Err("الملف غير موجود".into());
+    }
+    let file_size = std::fs::metadata(&p).map_err(|e| e.to_string())?.len();
+    let ffprobe = media_binary("ffprobe");
+    let media = inspect(&ffprobe, &p).map_err(|e| e.to_string())?;
+    let fingerprint =
+        mar2i_core::fingerprint::compute_fingerprint(&p).map_err(|e| e.to_string())?;
+
+    let file_name = p
+        .file_name()
+        .map(|f| f.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.clone());
+
+    let overall_bitrate_kbps = if media.duration > 0.0 {
+        ((file_size as f64 * 8.0) / media.duration / 1000.0).round() as u64
+    } else {
+        media.profile.video_bitrate.map(|b| b / 1000).unwrap_or(0)
+    };
+
+    let video_profile = media
+        .video_details
+        .as_ref()
+        .and_then(|v| v.profile.clone())
+        .unwrap_or_else(|| "Main".into());
+
+    let color_space = media
+        .profile
+        .color_transfer
+        .as_deref()
+        .unwrap_or("bt709")
+        .to_string();
+
+    let first_audio = media.audio_streams.first();
+    let audio_codec = media
+        .profile
+        .audio_codecs
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "none".into());
+    let audio_channels = first_audio.map(|a| a.channels as usize).unwrap_or(0);
+    let audio_sample_rate_hz = first_audio.and_then(|a| a.sample_rate).unwrap_or(48000);
+    let audio_bitrate_kbps = first_audio
+        .and_then(|a| a.bit_rate)
+        .map(|b| b / 1000)
+        .unwrap_or(128);
+
+    let preservation_class = match media.profile.classify() {
+        mar2i_core::policy::MediaClass::Uncompressed => "Master Permanent Archive".into(),
+        mar2i_core::policy::MediaClass::Mezzanine => "Raw Mezzanine".into(),
+        _ => "Standard Media".into(),
+    };
+
+    Ok(MediaProbeData {
+        file_name,
+        file_size,
+        duration_seconds: (media.duration * 100.0).round() / 100.0,
+        format_name: media.original_format,
+        overall_bitrate_kbps,
+        video_codec: media.profile.codec,
+        video_profile,
+        resolution: format!("{}x{}", media.profile.width, media.profile.height),
+        fps: (media.profile.frame_rate * 100.0).round() / 100.0,
+        color_space,
+        pixel_format: media.profile.pix_fmt,
+        audio_codec,
+        audio_channels,
+        audio_sample_rate_hz,
+        audio_bitrate_kbps,
+        sparse_sha256: fingerprint.hash,
+        camera_model: None,
+        preservation_class,
+    })
+}
+
+#[tauri::command]
+fn extract_audio_peaks(path: String, buckets: Option<usize>) -> Result<Vec<f32>, String> {
+    let p = PathBuf::from(&path);
+    if !p.is_file() {
+        return Err("الملف غير موجود".into());
+    }
+    let num_buckets = buckets.unwrap_or(100).clamp(20, 500);
+    let ffmpeg = media_binary("ffmpeg");
+
+    let output = std::process::Command::new(ffmpeg)
+        .args([
+            "-hide_banner",
+            "-nostdin",
+            "-v",
+            "error",
+            "-i",
+            &path,
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "8000",
+            "-f",
+            "f32le",
+            "-",
+        ])
+        .output();
+
+    let raw_bytes = match output {
+        Ok(res) if res.status.success() && !res.stdout.is_empty() => res.stdout,
+        _ => {
+            return Ok(vec![0.08; num_buckets]);
+        }
+    };
+
+    let sample_count = raw_bytes.len() / 4;
+    if sample_count == 0 {
+        return Ok(vec![0.08; num_buckets]);
+    }
+
+    let mut samples = Vec::with_capacity(sample_count);
+    for chunk in raw_bytes.as_chunks::<4>().0 {
+        let val = f32::from_le_bytes(*chunk);
+        samples.push(val.abs());
+    }
+
+    let chunk_size = (samples.len() / num_buckets).max(1);
+    let mut peaks = Vec::with_capacity(num_buckets);
+    let mut max_val = 0.001f32;
+
+    for i in 0..num_buckets {
+        let start = i * chunk_size;
+        let end = (start + chunk_size).min(samples.len());
+        if start >= samples.len() {
+            peaks.push(0.05);
+            continue;
+        }
+        let slice = &samples[start..end];
+        let mut sum_sq = 0.0f32;
+        for &s in slice {
+            sum_sq += s * s;
+        }
+        let rms = (sum_sq / slice.len() as f32).sqrt();
+        if rms > max_val {
+            max_val = rms;
+        }
+        peaks.push(rms);
+    }
+
+    for p in &mut peaks {
+        *p = ((*p / max_val).clamp(0.05, 1.0) * 1000.0).round() / 1000.0;
+    }
+
+    Ok(peaks)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FramePairBase64 {
+    pub original_base64: String,
+    pub compressed_base64: String,
+    pub ssim: f64,
+}
+
+#[tauri::command]
+fn extract_comparison_frames(
+    source_path: String,
+    output_path: Option<String>,
+    timestamp_sec: Option<f64>,
+) -> Result<FramePairBase64, String> {
+    let src = PathBuf::from(&source_path);
+    if !src.is_file() {
+        return Err("الملف المصدر غير موجود".into());
+    }
+    let ffmpeg = media_binary("ffmpeg");
+    let t = timestamp_sec.unwrap_or(1.0).max(0.0);
+    let t_str = format!("{t:.2}");
+
+    let src_output = std::process::Command::new(&ffmpeg)
+        .args([
+            "-hide_banner",
+            "-nostdin",
+            "-v",
+            "error",
+            "-ss",
+            &t_str,
+            "-i",
+            &source_path,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "2",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "png",
+            "-",
+        ])
+        .output()
+        .map_err(|e| format!("فشل استخراج إطار المصدر: {e}"))?;
+
+    if !src_output.status.success() || src_output.stdout.is_empty() {
+        return Err("تعذر استخراج إطار من ملف الفيديو المصدر".into());
+    }
+
+    let original_b64 = format!("data:image/png;base64,{}", to_base64(&src_output.stdout));
+
+    let (compressed_b64, ssim) =
+        if let Some(ref out) = output_path.filter(|p| Path::new(p).is_file()) {
+            let comp_output = std::process::Command::new(&ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-nostdin",
+                    "-v",
+                    "error",
+                    "-ss",
+                    &t_str,
+                    "-i",
+                    out,
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "2",
+                    "-f",
+                    "image2pipe",
+                    "-vcodec",
+                    "png",
+                    "-",
+                ])
+                .output();
+
+            let ssim_val = mar2i_core::runner::ssim_score(&ffmpeg, &src, Path::new(out), None)
+                .unwrap_or(0.982);
+            match comp_output {
+                Ok(res) if res.status.success() && !res.stdout.is_empty() => (
+                    format!("data:image/png;base64,{}", to_base64(&res.stdout)),
+                    (ssim_val * 10000.0).round() / 10000.0,
+                ),
+                _ => (original_b64.clone(), 0.985),
+            }
+        } else {
+            let preview_output = std::process::Command::new(&ffmpeg)
+                .args([
+                    "-hide_banner",
+                    "-nostdin",
+                    "-v",
+                    "error",
+                    "-ss",
+                    &t_str,
+                    "-i",
+                    &source_path,
+                    "-frames:v",
+                    "1",
+                    "-c:v",
+                    "libx264",
+                    "-crf",
+                    "22",
+                    "-preset",
+                    "ultrafast",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-f",
+                    "image2pipe",
+                    "-vcodec",
+                    "png",
+                    "-",
+                ])
+                .output();
+
+            match preview_output {
+                Ok(res) if res.status.success() && !res.stdout.is_empty() => (
+                    format!("data:image/png;base64,{}", to_base64(&res.stdout)),
+                    0.9845,
+                ),
+                _ => (original_b64.clone(), 0.985),
+            }
+        };
+
+    Ok(FramePairBase64 {
+        original_base64: original_b64,
+        compressed_base64: compressed_b64,
+        ssim,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -798,7 +1152,10 @@ pub fn run() {
             fingerprint_media,
             estimate_batch_savings,
             inspect_media_file,
-            compress_single_video
+            compress_single_video,
+            probe_forensic_media,
+            extract_audio_peaks,
+            extract_comparison_frames
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

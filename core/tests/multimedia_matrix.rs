@@ -59,6 +59,7 @@ fn matrix_h264_publishing_reencodes_and_passes_ssim_gate() {
         mode: Mode::Publishing,
         preference: CodecPreference::H264,
         available_encoders: None,
+        ..Default::default()
     };
 
     let outcome = run_one_with_options(
@@ -119,6 +120,7 @@ fn matrix_hevc_publishing_with_preference() {
         mode: Mode::Publishing,
         preference: CodecPreference::Hevc,
         available_encoders: None,
+        ..Default::default()
     };
 
     let outcome = run_one_with_options(
@@ -179,6 +181,7 @@ fn matrix_ffv1_lossless_archival_preserves_frame_hashes() {
         mode: Mode::Archival,
         preference: CodecPreference::Ffv1,
         available_encoders: None,
+        ..Default::default()
     };
 
     let outcome = run_one_with_options(
@@ -240,6 +243,7 @@ fn matrix_vp9_webm_video_encoding() {
         mode: Mode::Publishing,
         preference: CodecPreference::Vp9,
         available_encoders: None,
+        ..Default::default()
     };
 
     let outcome = run_one_with_options(
@@ -294,8 +298,8 @@ fn matrix_stream_copy_for_already_optimal_distribution_mp4() {
             "1",
             "-c:v",
             "libx264",
-            "-crf",
-            "26",
+            "-b:v",
+            "180k",
             "-pix_fmt",
             "yuv420p",
             "-c:a",

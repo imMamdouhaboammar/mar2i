@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { open, save } from '@tauri-apps/plugin-dialog'
+import { getSampleProbeData } from './data'
 
 export const isDesktop = '__TAURI_INTERNALS__' in window
 
@@ -108,16 +109,54 @@ export function inspectMediaFile(path: string): Promise<InspectedMedia> {
   return invoke<InspectedMedia>('inspect_media_file', { path })
 }
 
-export function compressSingleVideo(sourcePath: string, outputDir?: string, targetRatio?: number): Promise<CompressionSnapshotReport> {
-  return invoke<CompressionSnapshotReport>('compress_single_video', { sourcePath, outputDir, targetRatio })
+export type SingleVideoOptions = {
+  targetRatio?: number | null
+  trimStart?: number | null
+  trimEnd?: number | null
+  aspectPreset?: string | null
+  rotationDeg?: number | null
+  flipHorizontal?: boolean | null
+  hardwareAcceleration?: boolean | null
+}
+
+export function compressSingleVideo(
+  sourcePath: string,
+  outputDir?: string | null,
+  options?: SingleVideoOptions
+): Promise<CompressionSnapshotReport> {
+  return invoke<CompressionSnapshotReport>('compress_single_video', {
+    sourcePath,
+    outputDir: outputDir ?? undefined,
+    targetRatio: options?.targetRatio ?? undefined,
+    trimStart: options?.trimStart ?? undefined,
+    trimEnd: options?.trimEnd ?? undefined,
+    aspectPreset: options?.aspectPreset ?? undefined,
+    rotationDeg: options?.rotationDeg ?? undefined,
+    flipHorizontal: options?.flipHorizontal ?? undefined,
+    hardwareAcceleration: options?.hardwareAcceleration ?? undefined,
+  })
 }
 
 export function analyzeDirectory(input: string, output: string, mode: string, codec?: string): Promise<ScanResult> {
   return invoke<ScanResult>('analyze_directory', { input, output, mode, codec })
 }
 
-export function startNativeBatch(input: string, output: string, mode: string, profile: string, codec: string): Promise<void> {
-  return invoke<void>('start_batch', { input, output, mode, profile, codec })
+export function startNativeBatch(
+  input: string,
+  output: string,
+  mode: string,
+  profile: string,
+  codec: string,
+  hardwareAcceleration?: boolean
+): Promise<void> {
+  return invoke<void>('start_batch', {
+    input,
+    output,
+    mode,
+    profile,
+    codec,
+    hardwareAcceleration,
+  })
 }
 
 export function nativeStatus(): Promise<BatchStatus> {
@@ -241,4 +280,67 @@ export function fingerprintMedia(path: string): Promise<MediaFingerprint> {
 
 export function nativeReportContent(format: 'csv' | 'html'): Promise<string> {
   return invoke<string>('report_content', { format })
+}
+
+export type MediaProbeData = {
+  fileName: string
+  fileSize: number
+  durationSeconds: number
+  formatName: string
+  overallBitrateKbps: number
+  videoCodec: string
+  videoProfile: string
+  resolution: string
+  fps: number
+  colorSpace: string
+  pixelFormat: string
+  audioCodec: string
+  audioChannels: number
+  audioSampleRateHz: number
+  audioBitrateKbps: number
+  sparseSha256: string
+  cameraModel?: string
+  preservationClass: 'Master Permanent Archive' | 'Standard Media' | 'Raw Mezzanine'
+}
+
+export type FramePairBase64 = {
+  originalBase64: string
+  compressedBase64: string
+  ssim: number
+}
+
+export function probeForensicMedia(path: string): Promise<MediaProbeData> {
+  if (!isDesktop) {
+    return Promise.resolve(getSampleProbeData(path))
+  }
+
+  return invoke<MediaProbeData>('probe_forensic_media', { path })
+}
+
+export function extractAudioPeaks(path: string, buckets?: number): Promise<number[]> {
+  if (!isDesktop) {
+    return Promise.resolve([])
+  }
+
+  return invoke<number[]>('extract_audio_peaks', { path, buckets })
+}
+
+export function extractComparisonFrames(
+  sourcePath: string,
+  outputPath?: string,
+  timestampSec?: number
+): Promise<FramePairBase64> {
+  if (!isDesktop) {
+    return Promise.resolve({
+      originalBase64: '',
+      compressedBase64: '',
+      ssim: 0.985,
+    })
+  }
+
+  return invoke<FramePairBase64>('extract_comparison_frames', {
+    sourcePath,
+    outputPath,
+    timestampSec,
+  })
 }

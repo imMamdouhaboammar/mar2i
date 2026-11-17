@@ -75,6 +75,7 @@ fn smart_abr_two_pass_compresses_and_faststarts_mp4() {
             mode: Mode::Publishing,
             preference: CodecPreference::SmartAbr,
             available_encoders: Some(&available),
+            ..Default::default()
         },
         None,
     )
@@ -160,6 +161,7 @@ fn benchmark_sample_mp4_matches_telemetry_when_configured() {
             mode: Mode::Publishing,
             preference: CodecPreference::SmartAbr,
             available_encoders: Some(&available),
+            ..Default::default()
         },
         None,
     )

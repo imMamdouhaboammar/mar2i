@@ -16,6 +16,7 @@ export interface VideoTrimmerOptions {
   totalDurationSeconds: number
   initialStartSeconds?: number
   initialEndSeconds?: number
+  audioPeaks?: number[]
   onTrimChange?: (start: number, end: number) => void
   onApply?: (start: number, end: number) => void
   onCancel?: () => void
@@ -197,8 +198,10 @@ export class VideoTrimmer {
     ctx.lineTo(width, height / 2)
     ctx.stroke()
 
-    // Draw simulated synthetic audio waveform bars with realistic peaks
-    const barsCount = 120
+    // Draw audio waveform bars (real peaks if provided, or synthetic fallback)
+    const realPeaks = this.options.audioPeaks
+    const hasRealPeaks = Array.isArray(realPeaks) && realPeaks.length > 0
+    const barsCount = hasRealPeaks ? realPeaks.length : 120
     const barWidth = width / barsCount
     const gradient = ctx.createLinearGradient(0, 0, 0, height)
     gradient.addColorStop(0, '#10b981')
@@ -207,7 +210,7 @@ export class VideoTrimmer {
 
     ctx.fillStyle = gradient
 
-    // Deterministic pseudo-random seed based on filename
+    // Deterministic pseudo-random seed based on filename for fallback
     let seed = 0
 
     for (let i = 0; i < this.fileName.length; i++) {
@@ -221,13 +224,21 @@ export class VideoTrimmer {
     }
 
     for (let i = 0; i < barsCount; i++) {
-      const r = pseudoRandom(i)
-      const envelope = Math.sin((i / barsCount) * Math.PI) * 0.4 + 0.6
-      const barHeight = Math.max(6, r * (height * 0.8) * envelope)
+      let magnitude: number
+
+      if (hasRealPeaks) {
+        magnitude = realPeaks[i] ?? 0.08
+      } else {
+        const r = pseudoRandom(i)
+        const envelope = Math.sin((i / barsCount) * Math.PI) * 0.4 + 0.6
+        magnitude = r * envelope
+      }
+
+      const barHeight = Math.max(4, magnitude * (height * 0.85))
       const x = i * barWidth
       const y = (height - barHeight) / 2
 
-      ctx.fillRect(x + 1, y, barWidth - 1.5, barHeight)
+      ctx.fillRect(x + 1, y, Math.max(1, barWidth - 1.5), barHeight)
     }
   }
 
