@@ -1,0 +1,20 @@
+{
+  "target": "macos-arm64",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "stagedAt": "2026-11-17T10:28:47.752Z",
+  "binaries": [
+    {
+      "name": "ffmpeg",
+      "sha256": "84a82ad0b053e2c8051d42d4e7f96b1a64ce2f6f3be07619eebf5eee10c6390c",
+      "bytes": 32333304,
+      "executable": true
+    },
+    {
+      "name": "ffprobe",
+      "sha256": "8733960013e6aed00a513e9cecb5026aadc88c6e5d79ae6191fd9ea892a16e41",
+      "bytes": 32141416,
+      "executable": true
+    }
+  ]
+}

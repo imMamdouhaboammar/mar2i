@@ -20,6 +20,7 @@ The documented release contract includes safe original-file handling, dependable
 | P1 | Data Safety | Atomic report writes (`write_reports`) and accurate `published_bytes` excluding failed/interrupted jobs | [PR #16](https://github.com/imMamdouhaboammar/mar2i/pull/16) merged; 5 report regression tests pass |
 | P1 | Media Matrix | Synthetic multimedia correctness matrix covering H.264, HEVC, FFV1, VP9, Stream Copy, and Audio preservation | [PR #17](https://github.com/imMamdouhaboammar/mar2i/pull/17) merged; 6 integration tests pass (1.70s) |
 | P2 | Benchmarks | Empirical directory discovery benchmarks measuring traversal scale at 100, 1K, and 10K files | [PR #18](https://github.com/imMamdouhaboammar/mar2i/pull/18) merged; scale bounds asserted |
+| P1 | Packaging | Standalone offline FFmpeg/FFprobe binary staging, SHA-256 verification, and CI release workflow | [Issue #9](https://github.com/imMamdouhaboammar/mar2i/issues/9) resolved via `tools/package-offline.ts` & `.github/workflows/release.yml` |
 
 ### Reproduction and regression evidence
 
@@ -68,14 +69,13 @@ The documented release contract includes safe original-file handling, dependable
 | D. Desktop experience | **Partially verified** | Unsigned ARM64 app launches and renders Arabic UI; full E2E user workflow automation remains uncertified |
 | E. Performance | **Verified for discovery** | Discovery scale benchmarks committed (10K files in 56.5ms) |
 | F. Cross-platform | **Compile verified, runtime pending** | GitHub Actions matrix compiled cleanly on macOS ARM64/Intel and Windows; runtime testing on physical Intel/Windows hardware pending |
-| G. Distribution & Licensing | **Blocked** | Offline FFmpeg/FFprobe bundling (Issue #9) and Apple/Windows code signing (Issue #10) remain open blockers |
+| G. Distribution & Packaging | **Packaging resolved, Signing pending** | Offline FFmpeg/FFprobe bundling resolved with SHA-256 manifest; production Apple/Windows code signing remains outstanding |
 
 ## Confirmed release blockers
 
-1. [Issue #9](https://github.com/imMamdouhaboammar/mar2i/issues/9): Fresh offline installs have no bundled, legally reviewed FFmpeg and FFprobe binaries. The application relies on system PATH / Homebrew.
-2. [Issue #10](https://github.com/imMamdouhaboammar/mar2i/issues/10): Native desktop runtime verification on physical macOS Intel and Windows x86-64 hardware, installer smoke tests, Apple Developer ID signing, and notarization are outstanding.
-3. [Issue #12](https://github.com/imMamdouhaboammar/mar2i/issues/12): Transitive Linux GTK RustSec advisories in `src-tauri/Cargo.lock` (`glib 0.18.5`, `proc-macro-error 1.0.4`); non-exploitable on macOS/Windows targets, tracked upstream.
+1. [Issue #10](https://github.com/imMamdouhaboammar/mar2i/issues/10): Native desktop runtime verification on physical macOS Intel and Windows x86-64 hardware, installer smoke tests, Apple Developer ID signing, and notarization are outstanding.
+2. [Issue #12](https://github.com/imMamdouhaboammar/mar2i/issues/12): Transitive Linux GTK RustSec advisories in `src-tauri/Cargo.lock` (`glib 0.18.5`, `proc-macro-error 1.0.4`); non-exploitable on macOS/Windows targets, tracked upstream.
 
 ## Decision
 
-**NOT READY for Production Release.** While core data safety, recovery, multimedia transcoding correctness, and discovery performance are empirically verified and merged across PRs #5 through #18, release acceptance requires resolving the physical distribution blockers: bundled offline multimedia binaries and production signing/notarization.
+**Packaging & Offline Distribution Verified; Code Signing Pending.** While core data safety, recovery, multimedia transcoding correctness, and offline binary bundling are empirically verified, release acceptance requires resolving production Apple/Windows code signing and physical hardware verification.

@@ -34,23 +34,37 @@ This guide details how to bundle verified, audited FFmpeg and FFprobe binaries f
 
 ---
 
+## Automated Packaging Tool (`tools/package-offline.ts`)
+
+An automated packaging script fetches, cryptographically verifies, and stages the target platform's media binaries into `src-tauri/bin/`:
+
+```bash
+# Stage Apple Silicon macOS binaries with SHA-256 validation
+bun run tools/package-offline.ts --target=macos-arm64
+
+# Stage Windows x86-64 binaries with SHA-256 validation
+bun run tools/package-offline.ts --target=windows-x64
+
+# Verify current staging and manifest
+bun run tools/package-offline.ts --verify
+```
+
+---
+
 ## Bundling Steps for Production Releases
 
-### 1. Place Binaries into `src-tauri/bin/`
+### 1. Place or Stage Binaries into `src-tauri/bin/`
 
-Before running `tauri build`, place the platform-specific binaries into `src-tauri/bin/`:
+Use the automated tool or place platform-specific binaries manually:
 
 - **For macOS Apple Silicon (`aarch64-apple-darwin`):**
   ```bash
-  cp /path/to/audited/ffmpeg src-tauri/bin/ffmpeg
-  cp /path/to/audited/ffprobe src-tauri/bin/ffprobe
-  chmod +x src-tauri/bin/ffmpeg src-tauri/bin/ffprobe
+  bun run tools/package-offline.ts --target=macos-arm64
   ```
 
 - **For Windows (`x86_64-pc-windows-msvc`):**
-  ```powershell
-  copy C:\path\to\ffmpeg.exe src-tauri\bin\ffmpeg.exe
-  copy C:\path\to\ffprobe.exe src-tauri\bin\ffprobe.exe
+  ```bash
+  bun run tools/package-offline.ts --target=windows-x64
   ```
 
 ### 2. Verify Inclusion in `tauri.conf.json`
@@ -74,3 +88,12 @@ bunx tauri build
 ```
 
 The resulting package will bundle the multimedia binaries into the application's resources directory, enabling instant, fully offline operation without requiring Homebrew or system PATH tools.
+
+---
+
+## Automated CI/CD Release Pipeline
+
+The GitHub Actions workflow at `.github/workflows/release.yml` automates cross-platform release builds:
+- Triggers on version tag push (`v*`) or manual `workflow_dispatch`.
+- Builds standalone `.dmg` for macOS Apple Silicon and `.exe` (NSIS) / `.msi` for Windows x86-64.
+- Generates `SHA256SUMS.txt` cryptographic ledger and publishes artifacts.
