@@ -3,12 +3,13 @@ import { batchProgressLabel } from './batch-label'
 import {
   isDesktop,
   pickDirectory,
+  pickSavePath,
+  saveReportFile,
   analyzeDirectory,
   startNativeBatch,
   nativeStatus,
   nativeControl,
   openNativeResults,
-  nativeReportContent,
   detectHardwareEncoders,
   type ScanResult,
   type BatchStatus,
@@ -174,7 +175,7 @@ function button(label: string, action: string, variant = 'secondary', extra = ''
 }
 
 function navItem(screen: Screen, label: string, image: string): string {
-  const active = state.screen === screen || (screen === 'new' && state.screen === 'review')
+  const active = state.screen === screen || (screen === 'new' && (state.screen === 'review' || state.screen === 'options'))
 
   return `<button type="button" class="nav-item${active ? ' active' : ''}" data-screen="${screen}" aria-current="${active ? 'page' : 'false'}">${icon(image, 20)}<span>${label}</span></button>`
 }
@@ -188,7 +189,7 @@ function sidebar(): string {
       ${navItem('results', 'التقارير', 'report')}
       ${navItem('settings', 'الإعدادات', 'settings')}
     </nav>
-    <div class="sidebar-foot"><span class="availability-dot"></span> يعمل دون اتصال <span class="version">${isDesktop ? 'نسخة تطوير محلية' : 'واجهة تجريبية'}</span></div>
+    <div class="sidebar-foot"><span class="availability-dot"></span> يعمل دون اتصال <span class="version">${isDesktop ? 'الإصدار 0.1.0' : 'واجهة تجريبية'}</span></div>
   </aside>`
 }
 
@@ -331,7 +332,8 @@ function renderReview(): string {
     <div class="review-note">${icon('shield', 21)}<div><strong>ضمانة سلامة الأصول الأصلية</strong>
       <p>الأصول الأصلية محمية بصريًا ورياضيًا وتبقى للقراءة فقط. لن يتم تغيير أي ملف مصدري مطلقًا أثناء المعالجة.</p>
     </div></div>
-    <footer class="page-actions">${button('بدء المعالجة الآن', 'start-preview', 'primary', isDesktop && !scan?.supported ? 'disabled' : '')}${button('تعديل الخيارات', 'go-options', 'outline')}</footer>
+    ${isDesktop && (scan?.total ?? 0) > 0 && scan?.supported === 0 ? `<p class="inline-warning">${icon('alert', 18)} جميع الملفات المكتشفة تبدو مضغوطة مسبقًا، وستقوم المعالجة بفحصها وتخطي غير المحتاج منها بأمان دون تعديل الأصول.</p>` : ''}
+    <footer class="page-actions">${button('بدء المعالجة الآن', 'start-preview', 'primary', isDesktop && (!scan || scan.total === 0) ? 'disabled' : '')}${button('تعديل الخيارات', 'go-options', 'outline')}</footer>
   </div>`
 }
 
@@ -469,7 +471,7 @@ function nativeResultRows() {
 
     return `<tr class="${isSelected ? 'row-selected' : ''}">
       <td style="width: 40px; text-align: center;">
-        <input type="checkbox" class="file-cb" data-file-select="${name}" disabled title="الإجراءات المجمعة قيد التطوير" ${isSelected ? 'checked' : ''} aria-label="تحديد ${name}" />
+        <input type="checkbox" class="file-cb" data-file-select="${name}" ${isSelected ? 'checked' : ''} aria-label="تحديد ${name}" />
       </td>
       <td class="name-cell"><button class="row-toggle" data-expand="${name}" aria-expanded="${state.expandedFile === job.relative}">${icon('video', 17)}<span>${name}</span>${icon('chevron', 16)}</button></td>
       <td class="latin">${formatBytes(job.inputBytes)}</td><td class="latin">${job.outputBytes === null ? 'غير متاح' : formatBytes(job.outputBytes)}</td>
@@ -477,7 +479,7 @@ function nativeResultRows() {
       <td>
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
           <span class="row-status ${job.status === 'completed' ? 'successful' : job.status === 'failed' ? 'needs-review' : 'neutral'}">${label}</span>
-          ${isDesktop ? '' : `<button class="row-probe-btn" type="button" data-probe-file="${name}" title="فحص البصمة الرقمية">${icon('report', 15)}</button>`}
+          <button class="row-probe-btn" type="button" data-probe-file="${name}" title="فحص تفاصيل الملف">${icon('report', 15)}</button>
         </div>
       </td></tr>
       ${state.expandedFile === job.relative ? `<tr class="detail-row"><td colspan="6"><div class="detail-note">${icon('help', 18)}<div><strong>تفاصيل نتيجة الملف</strong><span>${escapeHtml(job.reason ?? job.quality ?? 'لم تتوفر تفاصيل إضافية')}</span></div></div></td></tr>` : ''}`
@@ -497,7 +499,7 @@ function renderResults(): string {
 
     <div class="results-overview"><div class="result-highlight"><strong class="latin">${savingsText}</strong><span>مساحة تم توفيرها بعد التحقق</span></div><dl class="results-counts"><div><dd class="latin">${completed}</dd><dt>مكتمل</dt></div><div><dd class="latin">${skipped}</dd><dt>دون ضغط</dt></div><div><dd class="latin">${failed}</dd><dt>فشل / يحتاج مراجعة</dt></div></dl><div class="result-actions">${button(`${icon('folder', 18)} فتح مجلد النتائج`, 'open-results-folder', 'primary', isDesktop && !statusObj ? 'disabled' : '')}<div class="menu-wrap">${button(`تصدير التقرير ${icon('chevron', 16)}`, 'toggle-report-menu', 'outline', `aria-expanded="${state.reportMenu}"`)}${state.reportMenu ? `<div class="export-menu" role="menu"><button role="menuitem" data-export="csv">CSV</button><button role="menuitem" data-export="excel">Excel (CSV)</button><button role="menuitem" data-export="html">HTML</button><button role="menuitem" data-export="pdf">PDF (طباعة)</button></div>` : ''}</div></div></div>
     <div class="section-title results-title"><h2>نتائج الملفات</h2><div class="search-box">${icon('search', 19)}<input id="file-search" type="search" placeholder="البحث في الملفات" value="${escapeHtml(state.search)}" aria-label="البحث في الملفات" /><button type="button" data-action="clear-search" aria-label="مسح البحث" ${state.search ? '' : 'hidden'}>${icon('close', 15)}</button></div></div>
-    <div class="table-scroll"><table class="data-table results-table"><thead><tr><th style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cb" aria-label="تحديد جميع الملفات" ${isDesktop ? 'disabled title="تحديد الملفات قيد التطوير"' : (state.selectedFileIds.size > 0 && state.selectedFileIds.size === sampleFiles.length ? 'checked' : '')} /></th><th>الملف</th><th>قبل</th><th>بعد</th><th>التوفير</th><th>الحالة</th></tr></thead><tbody id="result-table-body">${resultRows()}</tbody></table></div>
+    <div class="table-scroll"><table class="data-table results-table"><thead><tr><th style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-cb" aria-label="تحديد جميع الملفات" ${(isDesktop ? (state.batch?.jobs.length ?? 0) : sampleFiles.length) > 0 && state.selectedFileIds.size === (isDesktop ? (state.batch?.jobs.length ?? 0) : sampleFiles.length) ? 'checked' : ''} /></th><th>الملف</th><th>قبل</th><th>بعد</th><th>التوفير</th><th>الحالة</th></tr></thead><tbody id="result-table-body">${resultRows()}</tbody></table></div>
     <p class="data-disclaimer">${isDesktop ? 'التقرير يعرض القيم المقاسة من عملية المعالجة الفعلية' : 'القيم المعروضة نموذجية لتجربة الواجهة'}</p>
   </div>`
 }
@@ -555,25 +557,46 @@ async function togglePause(): Promise<void> {
 }
 
 function render(): void {
-  root.innerHTML = `
-    <div class="app-shell">
-      ${sidebar()}
-      <div class="workspace">
-        <div id="dynamic-island-slot" class="dynamic-island-container"></div>
-        <div class="window-bar">
-          <span>مرئي <span class="bar-separator">/</span> إدارة ملفات الفيديو الحكومية</span>
-          <span class="window-status"><span class="availability-dot"></span> ${isDesktop ? 'تشغيل محلي (Tauri + Rust)' : 'معاينة تفاعلية'}</span>
+  const existingShell = root.querySelector<HTMLDivElement>('.app-shell')
+
+  if (!existingShell) {
+    root.innerHTML = `
+      <div class="app-shell">
+        <div id="sidebar-container" style="display: contents;">${sidebar()}</div>
+        <div class="workspace">
+          <div id="dynamic-island-slot" class="dynamic-island-container"></div>
+          <div class="window-bar">
+            <span>مرئي <span class="bar-separator">/</span> إدارة ملفات الفيديو الحكومية</span>
+            <span class="window-status"><span class="availability-dot"></span> ${isDesktop ? 'تشغيل محلي (Tauri + Rust)' : 'معاينة تفاعلية'}</span>
+          </div>
+          <main id="main-content" tabindex="-1">
+            ${state.notice ? `<div class="native-notice" role="status">${escapeHtml(state.notice)}</div>` : ''}
+            ${currentScreen()}
+          </main>
         </div>
-        <main id="main-content" tabindex="-1">
-          ${state.notice ? `<div class="native-notice" role="status">${escapeHtml(state.notice)}</div>` : ''}
-          ${currentScreen()}
-        </main>
       </div>
-    </div>
-    <div id="modal-mount"></div>
-    <div id="batch-action-bar-mount"></div>
-    ${dialogMarkup()}
-  `
+      <div id="modal-mount"></div>
+      <div id="batch-action-bar-mount"></div>
+      <div id="dialog-mount">${dialogMarkup()}</div>
+    `
+  } else {
+    const sidebarContainer = document.querySelector<HTMLElement>('#sidebar-container')
+
+    if (sidebarContainer) sidebarContainer.innerHTML = sidebar()
+
+    const mainContent = document.querySelector<HTMLElement>('#main-content')
+
+    if (mainContent) {
+      mainContent.innerHTML = `
+        ${state.notice ? `<div class="native-notice" role="status">${escapeHtml(state.notice)}</div>` : ''}
+        ${currentScreen()}
+      `
+    }
+
+    const dialogMount = document.querySelector<HTMLElement>('#dialog-mount')
+
+    if (dialogMount) dialogMount.innerHTML = dialogMarkup()
+  }
 
   if (state.dialog) {
     const dialog = document.querySelector<HTMLDialogElement>('#app-dialog')
@@ -721,8 +744,8 @@ function render(): void {
   // 6. Mount Modals (VideoTrimmer, AspectRatioStudio, ForensicProbeDrawer)
   const modalMount = document.querySelector<HTMLElement>('#modal-mount')
 
-  if (modalMount && !isDesktop) {
-    if (state.activeTrimmerFile) {
+  if (modalMount) {
+    if (state.activeTrimmerFile && !isDesktop) {
       new VideoTrimmer({
         container: modalMount,
         fileName: state.activeTrimmerFile,
@@ -737,7 +760,7 @@ function render(): void {
           render()
         },
       })
-    } else if (state.activeAspectFile) {
+    } else if (state.activeAspectFile && !isDesktop) {
       new AspectRatioStudio({
         container: modalMount,
         fileName: state.activeAspectFile,
@@ -809,8 +832,18 @@ async function exportReport(format: string): Promise<void> {
 
   if (isDesktop && (format === 'csv' || format === 'excel' || format === 'html')) {
     try {
-      const content = await nativeReportContent(format === 'html' ? 'html' : 'csv')
-      download(`mar2i-report.${format === 'html' ? 'html' : 'csv'}`, content, format === 'html' ? 'text/html' : 'text/csv;charset=utf-8;')
+      const ext = format === 'html' ? 'html' : 'csv'
+      const defaultName = `mar2i-report-${new Date().toISOString().slice(0, 10)}.${ext}`
+      const chosen = await pickSavePath(defaultName, [ext])
+
+      if (chosen) {
+        await saveReportFile(format, chosen)
+        state.notice = `تم تصدير التقرير بنجاح إلى: ${chosen}`
+        render()
+
+        return
+      }
+
       render()
 
       return
@@ -827,7 +860,11 @@ async function exportReport(format: string): Promise<void> {
     const body = sampleFiles.map((f) => `<tr><td>${escapeHtml(f.name)}</td><td>${f.before}</td><td>${f.after}</td><td>${f.status}</td><td>${f.codec}</td></tr>`).join('')
     download('تقرير-مرئي-الدفعة.html', `<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>تقرير مرئي</title><style>body{font-family:sans-serif;padding:24px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:right}</style></head><body><h1>تقرير معالجة الدفعة</h1><table><thead><tr><th>الملف</th><th>قبل GB</th><th>بعد GB</th><th>الحالة</th><th>الترميز</th></tr></thead><tbody>${body}</tbody></table></body></html>`, 'text/html;charset=utf-8;')
   } else if (format === 'pdf') {
-    window.print()
+    try {
+      window.print()
+    } catch {
+      state.notice = 'طباعة PDF غير مدعومة مباشرة في هذا المستعرض'
+    }
   }
 
   render()
@@ -973,7 +1010,9 @@ async function handleNativeAction(action: string): Promise<boolean> {
 
   if (action === 'open-results-folder') {
     try {
-      await openNativeResults()
+      await openNativeResults(state.outputPath ?? undefined)
+      state.notice = 'تم فتح مجلد النتائج بنجاح'
+      render()
     } catch (error) {
       showError(error instanceof Error ? error : String(error))
     }
@@ -1063,10 +1102,18 @@ root.addEventListener('click', async (event) => {
   const selectAllCb = target.closest<HTMLInputElement>('#select-all-cb')
 
   if (selectAllCb) {
-    if (state.selectedFileIds.size === sampleFiles.length) {
-      state.selectedFileIds.clear()
+    if (isDesktop && state.batch?.jobs.length) {
+      if (state.selectedFileIds.size === state.batch.jobs.length) {
+        state.selectedFileIds.clear()
+      } else {
+        state.selectedFileIds = new Set(state.batch.jobs.map((j) => j.relative))
+      }
     } else {
-      state.selectedFileIds = new Set(sampleFiles.map((f) => f.name))
+      if (state.selectedFileIds.size === sampleFiles.length) {
+        state.selectedFileIds.clear()
+      } else {
+        state.selectedFileIds = new Set(sampleFiles.map((f) => f.name))
+      }
     }
 
     render()

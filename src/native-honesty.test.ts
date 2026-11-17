@@ -4,15 +4,18 @@ import { describe, expect, it } from 'bun:test'
 describe('Native desktop truthfulness', () => {
   it('shows no synthetic results, official certificate or invented throughput before a batch exists', async () => {
     // SAFETY: Mocking Tauri internal IPC interface in test environment
-    const win = window as typeof window & { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<{ availableEncoders: string[]; recommendedH264: string | null; recommendedHevc: string | null }> } }
+    type MockResponse = string | { availableEncoders: string[]; recommendedH264: string | null; recommendedHevc: string | null }
+    const win = window as typeof window & { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<MockResponse> } }
     win.__TAURI_INTERNALS__ = { invoke: async (cmd) => {
-      if (cmd === 'report_content') throw new Error('Report not available')
+      if (cmd === 'report_content' || cmd === 'save_report_file') throw new Error('Report not available')
+
+      if (cmd === 'plugin:dialog|save') return '/mock/save/path.csv'
 
       return { availableEncoders: [], recommendedH264: null, recommendedHevc: null }
     } }
     document.body.innerHTML = '<div id="app"></div>'
     await import('./main')
-    expect(document.querySelector('.sidebar-foot .version')?.textContent).toBe('نسخة تطوير محلية')
+    expect(document.querySelector('.sidebar-foot .version')?.textContent).toBe('الإصدار 0.1.0')
     expect(document.querySelector('#dynamic-island-slot')?.textContent).not.toContain('4.2x')
     document.querySelector<HTMLButtonElement>('[data-screen="results"]')?.click()
     expect(document.querySelector('.impact-certificate-card')).toBeNull()

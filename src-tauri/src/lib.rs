@@ -337,23 +337,37 @@ fn control_batch(action: String, runtime: State<'_, Arc<Runtime>>) -> Result<(),
 }
 
 #[tauri::command]
-fn open_output_directory(runtime: State<'_, Arc<Runtime>>) -> Result<(), String> {
-    let selected = runtime
-        .selection
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or_else(|| "لم يتم تحديد مجلد النتائج بعد".to_owned())?;
-    let folder = std::fs::canonicalize(selected.output).map_err(|error| error.to_string())?;
+fn open_output_directory(path: Option<String>, runtime: State<'_, Arc<Runtime>>) -> Result<(), String> {
+    let target = if let Some(p) = path.filter(|s| !s.trim().is_empty()) {
+        PathBuf::from(p)
+    } else {
+        let selected = runtime
+            .selection
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| "لم يتم تحديد مجلد النتائج بعد".to_owned())?;
+        selected.output
+    };
+
+    if !target.exists() {
+        std::fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+    }
+
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(&folder).status();
+    let result = std::process::Command::new("open").arg(&target).status();
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("explorer").arg(&folder).status();
+    let result = {
+        let path_str = target.to_string_lossy().to_string();
+        let clean = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str);
+        std::process::Command::new("explorer").arg(clean).status()
+    };
     #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open").arg(&folder).status();
+    let result = std::process::Command::new("xdg-open").arg(&target).status();
+
     match result {
         Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err("تعذر فتح مجلد النتائج".into()),
+        Ok(_) => Err("تعذر فتح مجلد النتائج عبر نظام التشغيل".into()),
         Err(error) => Err(error.to_string()),
     }
 }
@@ -472,6 +486,46 @@ fn report_content(format: String, runtime: State<'_, Arc<Runtime>>) -> Result<St
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn save_report_file(
+    format: String,
+    destination: String,
+    runtime: State<'_, Arc<Runtime>>,
+) -> Result<String, String> {
+    let selected = runtime
+        .selection
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or_else(|| "لم تبدأ أي دفعة بعد".to_owned())?;
+    let file = match format.as_str() {
+        "csv" | "excel" => "report.csv",
+        "html" => "report.html",
+        _ => return Err("صيغة التقرير غير مدعومة حاليًا".into()),
+    };
+    let state_dir = selected.output.join(".mar2i");
+    let src = state_dir.join(file);
+    if !src.is_file() {
+        let db = state_dir.join("batch.sqlite");
+        if db.is_file() {
+            if let Ok(queue) = BatchQueue::open(&db, &selected.input, &selected.output, selected.mode) {
+                if let Ok(jobs) = queue.list() {
+                    let _ = write_reports(&state_dir, &jobs);
+                }
+            }
+        }
+    }
+    if !src.is_file() {
+        return Err("ملف التقرير غير متوفر في مجلد الدفعة".into());
+    }
+    let dest_path = PathBuf::from(&destination);
+    if let Some(parent) = dest_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::copy(&src, &dest_path).map_err(|e| format!("فشل نسخ التقرير إلى الوجهة المحددة: {e}"))?;
+    Ok(destination)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -484,6 +538,7 @@ pub fn run() {
             control_batch,
             open_output_directory,
             report_content,
+            save_report_file,
             detect_hardware_encoders,
             get_ministry_profiles,
             fingerprint_media,

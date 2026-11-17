@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
 
 export const isDesktop = '__TAURI_INTERNALS__' in window
 
@@ -64,8 +64,28 @@ export function nativeControl(action: 'pause' | 'resume' | 'cancel'): Promise<vo
   return invoke<void>('control_batch', { action })
 }
 
-export function openNativeResults(): Promise<void> {
-  return invoke<void>('open_output_directory')
+export function openNativeResults(path?: string): Promise<void> {
+  return invoke<void>('open_output_directory', { path })
+}
+
+export async function pickSavePath(defaultName: string, extensions: string[]): Promise<string | null> {
+  if (!isDesktop) return null
+
+  const chosen = await save({
+    defaultPath: defaultName,
+    filters: [{
+      name: 'Report',
+      extensions,
+    }],
+  })
+
+  if (chosen === null || Array.isArray(chosen)) return null
+
+  return chosen
+}
+
+export function saveReportFile(format: string, destination: string): Promise<string> {
+  return invoke<string>('save_report_file', { format, destination })
 }
 
 export type HardwareEncoder = {
