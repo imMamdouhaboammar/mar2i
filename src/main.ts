@@ -44,8 +44,15 @@ import { ForensicProbeDrawer } from './widgets/forensic-probe'
 import { StorageMeter } from './widgets/storage-meter'
 import { ImpactCertificate } from './widgets/impact-certificate'
 import { BatchActionBar } from './widgets/batch-action-bar'
+import {
+  APP_VERSION,
+  APP_RELEASE_NAME,
+  APP_BUILD_DATE,
+  APP_TARGET_ARCH,
+  APP_ENGINE_INFO,
+} from './version'
 
-type FolderDialog = 'output' | 'cancel' | 'results' | null
+type FolderDialog = 'output' | 'cancel' | 'results' | 'about' | null
 
 type UiState = {
   screen: Screen
@@ -206,7 +213,7 @@ function sidebar(): string {
       ${navItem('results', 'التقارير والنتائج', 'report')}
       ${navItem('settings', 'الإعدادات', 'settings')}
     </nav>
-    <div class="sidebar-foot"><span class="availability-dot"></span> يعمل دون اتصال <span class="version">${isDesktop ? 'الإصدار 0.1.0' : 'واجهة تجريبية'}</span></div>
+    <div class="sidebar-foot"><span class="availability-dot"></span> يعمل دون اتصال <span class="version" data-action="open-about-modal" role="button" tabindex="0" title="انقر لعرض تفاصيل الإصدار">${isDesktop ? `الإصدار ${APP_VERSION}` : 'واجهة تجريبية'}</span></div>
   </aside>`
 }
 
@@ -700,6 +707,18 @@ function renderSettings(): string {
           <div><span>النشر الذري (Atomic):</span> <strong>كتابة مؤقتة في .mar2i-tmp ونقل ذري عند النجاح فقط</strong></div>
         </div>
       </section>
+
+      <section class="setting-card">
+        <h2>عن تطبيق مرئي والإصدار</h2>
+        <p class="setting-description">بيانات الإصدار الحالي وبيئة التشغيل المعتمدة للنظام.</p>
+        <div class="resource-spec">
+          <div><span>الإصدار البرمجي:</span> <strong dir="ltr">الإصدار ${APP_VERSION} (المستقر)</strong></div>
+          <div><span>تاريخ البناء والإطلاق:</span> <strong>${APP_BUILD_DATE}</strong></div>
+          <div><span>بيئة التشغيل والعتاد:</span> <strong>${APP_TARGET_ARCH}</strong></div>
+          <div><span>نواة المعالجة:</span> <strong>${APP_ENGINE_INFO}</strong></div>
+          <div><span>حالة الاتصال:</span> <span class="setting-badge badge-green">يعمل محلياً دون اتصال 100%</span></div>
+        </div>
+      </section>
     </div>
     <footer class="page-actions">${button('حفظ الإعدادات', 'save-settings', 'primary')}</footer>
   </div>`
@@ -711,6 +730,30 @@ function dialogMarkup(): string {
   if (state.dialog === 'cancel') return `<dialog id="app-dialog" class="app-dialog" aria-labelledby="dialog-heading"><h2 id="dialog-heading">${isDesktop ? 'إلغاء المهام المنتظرة؟' : 'إلغاء معاينة المعالجة؟'}</h2><p>${isDesktop ? 'المهام الحالية ستنتهي أولًا، ولن تبدأ مهام جديدة، والملفات الأصلية ستظل محفوظة' : 'ستعود إلى إعداد الدفعة، ولن تتغير أي ملفات أصلية'}</p><div class="dialog-actions">${button(isDesktop ? 'تأكيد الإلغاء' : 'العودة للدفعة', 'confirm-cancel', 'danger')}${button('متابعة المعالجة', 'close-dialog', 'outline')}</div></dialog>`
 
   if (state.dialog === 'results') return `<dialog id="app-dialog" class="app-dialog" aria-labelledby="dialog-heading"><h2 id="dialog-heading">مجلد النتائج</h2><p>هذه نسخة لمعاينة الواجهة، ولم تُنتج ملفات مضغوطة أو يُنشأ مجلد نتائج على جهازك بعد</p><div class="dialog-actions">${button('فهمت', 'close-dialog', 'primary')}</div></dialog>`
+
+  if (state.dialog === 'about') {
+    return `<dialog id="app-dialog" class="app-dialog about-dialog" aria-labelledby="dialog-heading">
+      <div class="about-modal-content">
+        <div class="about-header">
+          <div class="brand"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></span><span>مرئي</span></div>
+          <span class="setting-badge badge-green">الإصدار ${APP_VERSION} (مستقر)</span>
+        </div>
+        <h2 id="dialog-heading">${APP_RELEASE_NAME}</h2>
+        <p class="about-desc">منظومة معالجة وأرشفة ملفات الفيديو الحكومية المستقلة تماماً والآمنة دون اتصال بالإنترنت.</p>
+        <div class="resource-spec">
+          <div><span>رقم الإصدار:</span> <strong dir="ltr">${APP_VERSION}</strong></div>
+          <div><span>تاريخ الإصدار:</span> <strong>${APP_BUILD_DATE}</strong></div>
+          <div><span>معمارية النظام:</span> <strong>${APP_TARGET_ARCH}</strong></div>
+          <div><span>بيئة التشغيل:</span> <strong>${APP_ENGINE_INFO}</strong></div>
+          <div><span>مستوى الأمان:</span> <strong>حماية الأصول الأصلية (Read-Only) + فحص Framemd5</strong></div>
+          <div><span>الاستقلالية:</span> <strong style="color: var(--green);">100% يعمل محلياً دون أي اتصال خارجي</strong></div>
+        </div>
+        <div class="dialog-actions" style="margin-top: 20px;">
+          ${button('إغلاق النافذة', 'close-dialog', 'primary')}
+        </div>
+      </div>
+    </dialog>`
+  }
 
   return ''
 }
@@ -1195,6 +1238,20 @@ async function handleNativeAction(action: string): Promise<boolean> {
     return true
   }
 
+  if (action === 'open-about-modal') {
+    state.dialog = 'about'
+    render()
+
+    return true
+  }
+
+  if (action === 'close-dialog') {
+    state.dialog = null
+    render()
+
+    return true
+  }
+
   if (action === 'select-source') {
     const chosen = await pickDirectory()
 
@@ -1619,6 +1676,10 @@ root.addEventListener('click', async (event) => {
       break
     case 'save-settings':
       state.notice = 'تم حفظ إعدادات التطبيق بنجاح'
+      render()
+      break
+    case 'open-about-modal':
+      state.dialog = 'about'
       render()
       break
     case 'start-preview':

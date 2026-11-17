@@ -61,7 +61,19 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); out
 .nav-item.active::before { content: ''; width: 3px; height: 22px; border-radius: 2px; background: var(--green); position: absolute; right: 0; }
 .sidebar-foot { margin-top: auto; padding: 20px 13px 6px; color: #62736b; font-size: 12px; line-height: 1.7; }
 .availability-dot { display: inline-block; width: 7px; height: 7px; border-radius: 100%; background: #5f9372; margin-inline-end: 7px; }
-.sidebar-foot .version { display: block; margin-top: 4px; color: #8a9690; }
+.sidebar-foot .version {
+  display: inline-block;
+  margin-top: 4px;
+  color: #718279;
+  cursor: pointer;
+  border-bottom: 1px dotted #8fa197;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.sidebar-foot .version:hover {
+  color: var(--green-dark);
+  border-bottom-color: var(--green-dark);
+}
 .workspace { flex: 1; min-width: 0; height: 100vh; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; position: relative; }
 .window-bar { height: 51px; padding: 0 40px; background: #fbfcfa; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; color: #596a63; font-size: 12px; letter-spacing: .01em; position: sticky; top: 0; z-index: 25; flex-shrink: 0; }
 .bar-separator { color: #b0bcb5; padding: 0 7px; }
@@ -2242,5 +2254,32 @@ select.select-surface:focus-visible { border-color: var(--green); outline: 3px s
   font-family: ui-sans-serif, system-ui, sans-serif;
   direction: ltr;
   text-align: right;
+}
+
+.about-dialog {
+  max-width: 540px;
+  width: 90%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+.about-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.about-desc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 16px;
 }
 

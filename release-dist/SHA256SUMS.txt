@@ -1,4 +1,5 @@
 dcbb6cba1e515b3d883c54ad6f770a3925fd9f2052190fde52d39b973bfd5403  release-dist/macos/Mar2i_0.1.0_aarch64.dmg
+12e278c887264181b4059aac765d18b59e478e3708ab751eb74126150b94b8c8  release-dist/macos/Mar2i_0.2.0_aarch64.dmg
 402b2be851dee319cd8c2ebf6f7fc76d614ebe6b6f6c19bec331a22a454b5adc  release-dist/windows/mar2i-windows-x64-offline-binaries.zip
 04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00  release-dist/windows/bin/ffmpeg.exe
 4303ec85855340689b1f8aa5d9c1dc06ef3e3090682de3034edc3fca2b0798d5  release-dist/windows/bin/ffprobe.exe
