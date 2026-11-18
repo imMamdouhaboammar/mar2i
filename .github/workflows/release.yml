@@ -16,6 +16,9 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   build-release:
     name: ${{ matrix.name }} (${{ matrix.target }})
@@ -116,3 +119,22 @@ jobs:
           name: mar2i-${{ matrix.id }}
           path: release-artifacts/*
           if-no-files-found: error
+
+      - name: Publish to GitHub Release
+        if: steps.filter.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" != v* ]]; then
+            TAG="v0.2.1"
+          fi
+          echo "Publishing artifacts to release $TAG..."
+          cd release-artifacts
+          for f in *; do
+            if [ -f "$f" ]; then
+              echo "Uploading $f to release $TAG..."
+              gh release upload "$TAG" "$f" --clobber || true
+            fi
+          done
