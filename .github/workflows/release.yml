@@ -128,9 +128,10 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           if [[ "$TAG" != v* ]]; then
-            TAG="v0.2.1"
+            TAG="v0.2.2"
           fi
           echo "Publishing artifacts to release $TAG..."
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "مرئي (Mar2i) $TAG" --notes "Production release $TAG with UI craftsmanship improvements, golden smart compression, and full offline security guarantees."
           cd release-artifacts
           for f in *; do
             if [ -f "$f" ]; then
