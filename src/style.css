@@ -2283,3 +2283,44 @@ select.select-surface:focus-visible { border-color: var(--green); outline: 3px s
   margin-bottom: 16px;
 }
 
+.about-legal-card {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--warning-bg);
+  color: var(--ink);
+  text-align: right;
+}
+
+.about-legal-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.legal-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--warning);
+  letter-spacing: -0.01em;
+}
+
+.about-legal-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 6px 0;
+  line-height: 1.5;
+}
+
+.about-legal-text {
+  font-size: 12px;
+  color: var(--ink);
+  line-height: 1.6;
+  margin: 0;
+}
+
+

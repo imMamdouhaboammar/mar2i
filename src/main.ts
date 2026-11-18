@@ -54,6 +54,10 @@ import {
   APP_BUILD_DATE,
   APP_TARGET_ARCH,
   APP_ENGINE_INFO,
+  APP_ORGANIZATION,
+  APP_DEPARTMENT,
+  APP_LEGAL_COPYRIGHT,
+  APP_LEGAL_RESTRICTION,
 } from './version'
 
 type FolderDialog = 'output' | 'cancel' | 'results' | 'about' | null
@@ -740,13 +744,22 @@ function renderSettings(): string {
 
       <section class="setting-card">
         <h2>عن تطبيق مرئي والإصدار</h2>
-        <p class="setting-description">بيانات الإصدار الحالي وبيئة التشغيل المعتمدة للنظام.</p>
+        <p class="setting-description">بيانات الإصدار الحالي والملكية الفكرية وبيئة التشغيل المعتمدة للنظام.</p>
         <div class="resource-spec">
+          <div><span>الجهة المالكة:</span> <strong>${APP_ORGANIZATION}</strong></div>
+          <div><span>القسم المطور:</span> <strong>${APP_DEPARTMENT}</strong></div>
           <div><span>الإصدار البرمجي:</span> <strong dir="ltr">الإصدار ${APP_VERSION} (المستقر)</strong></div>
           <div><span>تاريخ البناء والإطلاق:</span> <strong>${APP_BUILD_DATE}</strong></div>
           <div><span>بيئة التشغيل والعتاد:</span> <strong>${APP_TARGET_ARCH}</strong></div>
           <div><span>نواة المعالجة:</span> <strong>${APP_ENGINE_INFO}</strong></div>
           <div><span>حالة الاتصال:</span> <span class="setting-badge badge-green">يعمل محلياً دون اتصال 100%</span></div>
+        </div>
+        <div class="about-legal-card">
+          <div class="about-legal-header">
+            <span class="legal-badge">إشعار الملكية الفكرية والحماية القانونية</span>
+          </div>
+          <p class="about-legal-title">${APP_LEGAL_COPYRIGHT}</p>
+          <p class="about-legal-text">${APP_LEGAL_RESTRICTION}</p>
         </div>
       </section>
     </div>
@@ -771,12 +784,21 @@ function dialogMarkup(): string {
         <h2 id="dialog-heading">${APP_RELEASE_NAME}</h2>
         <p class="about-desc">منظومة معالجة وأرشفة ملفات الفيديو الحكومية المستقلة تماماً والآمنة دون اتصال بالإنترنت.</p>
         <div class="resource-spec">
+          <div><span>الجهة المالكة:</span> <strong>${APP_ORGANIZATION}</strong></div>
+          <div><span>القسم المطور:</span> <strong>${APP_DEPARTMENT}</strong></div>
           <div><span>رقم الإصدار:</span> <strong dir="ltr">${APP_VERSION}</strong></div>
           <div><span>تاريخ الإصدار:</span> <strong>${APP_BUILD_DATE}</strong></div>
           <div><span>معمارية النظام:</span> <strong>${APP_TARGET_ARCH}</strong></div>
           <div><span>بيئة التشغيل:</span> <strong>${APP_ENGINE_INFO}</strong></div>
           <div><span>مستوى الأمان:</span> <strong>حماية الأصول الأصلية (Read-Only) + فحص Framemd5</strong></div>
           <div><span>الاستقلالية:</span> <strong style="color: var(--green);">100% يعمل محلياً دون أي اتصال خارجي</strong></div>
+        </div>
+        <div class="about-legal-card">
+          <div class="about-legal-header">
+            <span class="legal-badge">إشعار الملكية الفكرية والحماية القانونية</span>
+          </div>
+          <p class="about-legal-title">${APP_LEGAL_COPYRIGHT}</p>
+          <p class="about-legal-text">${APP_LEGAL_RESTRICTION}</p>
         </div>
         <div class="dialog-actions" style="margin-top: 20px;">
           ${button('إغلاق النافذة', 'close-dialog', 'primary')}

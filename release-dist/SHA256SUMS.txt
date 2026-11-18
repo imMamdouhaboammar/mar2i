@@ -1,3 +1,4 @@
+05d7394657ca2e0767f86961895b29e6a4f654e7fbc2123a44e58421b578ff4d  release-dist/macos/Mar2i_0.2.1_aarch64.dmg
 dcbb6cba1e515b3d883c54ad6f770a3925fd9f2052190fde52d39b973bfd5403  release-dist/macos/Mar2i_0.1.0_aarch64.dmg
 12e278c887264181b4059aac765d18b59e478e3708ab751eb74126150b94b8c8  release-dist/macos/Mar2i_0.2.0_aarch64.dmg
 402b2be851dee319cd8c2ebf6f7fc76d614ebe6b6f6c19bec331a22a454b5adc  release-dist/windows/mar2i-windows-x64-offline-binaries.zip

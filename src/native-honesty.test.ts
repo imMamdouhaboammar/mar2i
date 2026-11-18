@@ -61,4 +61,20 @@ describe('Native desktop truthfulness', () => {
     expect(document.querySelector('.feature-indicators')?.textContent).not.toContain('نشط')
     expect(document.querySelector('.feature-indicators')?.textContent).not.toContain('GPU نشط')
   })
+
+  it('displays mandatory 4STEPS KSA intellectual property and restricted distribution notice', async () => {
+    document.querySelector<HTMLButtonElement>('[data-screen="settings"]')?.click()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const settingsText = document.querySelector('#app')?.textContent
+    expect(settingsText).toContain('4STEPS KSA')
+    expect(settingsText).toContain('قسم التطوير والذكاء الاصطناعي والحلول الرقمية')
+    expect(settingsText).toContain('بدون ترخيص رسمي أو إذن كتابي مسبق')
+
+    document.querySelector<HTMLSpanElement>('[data-action="open-about-modal"]')?.click()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const aboutDialog = document.querySelector('#app-dialog')
+    expect(aboutDialog).not.toBeNull()
+    expect(aboutDialog?.textContent).toContain('4STEPS KSA')
+    expect(aboutDialog?.textContent).toContain('إشعار الملكية الفكرية والحماية القانونية')
+  })
 })

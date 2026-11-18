@@ -29,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "copyright": "Copyright © 2026 4STEPS KSA - Development, AI & Digital Solutions Department. All rights reserved.",
     "resources": [
       "bin/*"
     ],
