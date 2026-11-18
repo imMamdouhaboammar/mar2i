@@ -4,9 +4,9 @@ export const APP_RELEASE_NAME = 'مرئي (Mar2i) — الإصدار المست�
 
 export const APP_BUILD_DATE = '17 نوفمبر 2026'
 
-export const APP_TARGET_ARCH = 'macOS Apple Silicon (aarch64) & Windows (x64)'
+export const APP_TARGET_ARCH = 'macOS & Windows (x64 / arm64)'
 
-export const APP_ENGINE_INFO = 'Tauri v2 + Rust Core 0.2.1'
+export const APP_ENGINE_INFO = 'محرك المعالجة والأرشفة الآمنة (الإصدار 0.2.1)'
 
 export const APP_ORGANIZATION = '4STEPS KSA'
 

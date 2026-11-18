@@ -253,7 +253,7 @@ function screenHeading(title: string, subtitle?: string, back = false): string {
 }
 
 function folderField(label: string, name: string, action: string, id: string): string {
-  return `<div class="folder-row"><label for="${id}">${label}</label><div class="folder-value" id="${id}" data-action="${action}" role="button" tabindex="0" aria-label="${label}: ${escapeHtml(name)}">${icon('folder', 21)}<span>${escapeHtml(name)}</span></div>${button('استعراض', action, 'outline')}</div>`
+  return `<div class="folder-row"><label for="${id}">${label}</label><div class="folder-value" id="${id}" data-action="${action}" role="button" tabindex="0" aria-label="${label}: ${escapeHtml(name)}">${icon('folder', 21)}<span>${escapeHtml(name)}</span></div><div class="folder-actions">${button('استعراض', action, 'outline')}</div></div>`
 }
 
 function modeChoices(): string {
@@ -354,7 +354,7 @@ function renderNew(): string {
       <div class="select-wrapper">
         <select id="codec-select" class="select-surface" aria-label="اختيار الترميز">
           <option value="auto" ${state.codec === 'auto' ? 'selected' : ''}>تلقائي (الأنسب لكل فيديو)</option>
-          <option value="smart_abr" ${state.codec === 'smart_abr' ? 'selected' : ''}>الضغط الذكي (تقليص الحجم 50% - 2-Pass ABR)</option>
+          <option value="smart_abr" ${state.codec === 'smart_abr' ? 'selected' : ''}>👑 الضغط الذكي (الموصى به - تقليص 50% - 2-Pass ABR)</option>
           <option value="h264" ${state.codec === 'h264' ? 'selected' : ''}>H.264 (AVC) - توافق شامل مع الأجهزة</option>
           <option value="hevc" ${state.codec === 'hevc' ? 'selected' : ''}>HEVC (H.265) - ضغط عالي الكفاءة</option>
           <option value="av1" ${state.codec === 'av1' ? 'selected' : ''}>AV1 - أقصى توفير للحجم</option>
@@ -373,9 +373,15 @@ function renderNew(): string {
 
 function codecRow(codec: typeof codecs[number]): string {
   const active = state.codec === codec.id
+  const isSmart = codec.id === 'smart_abr'
 
-  return `<div class="codec-row${active ? ' selected' : ''}" data-codec="${codec.id}" role="row">
-    <div class="codec-name" role="cell"><input type="radio" name="codec" value="${codec.id}" ${active ? 'checked' : ''} aria-label="اختيار ${codec.name}" /><strong dir="auto">${codec.name}</strong><button class="tiny-help${state.help === codec.id ? ' is-current' : ''}" data-help="${codec.id}" type="button" aria-label="شرح ${codec.name}">${icon('help', 18)}</button></div>
+  return `<div class="codec-row${active ? ' selected' : ''}${isSmart ? ' codec-featured' : ''}" data-codec="${codec.id}" role="row">
+    <div class="codec-name" role="cell">
+      <input type="radio" name="codec" value="${codec.id}" ${active ? 'checked' : ''} aria-label="اختيار ${codec.name}" />
+      <strong dir="rtl">${isSmart ? '<span class="crown-icon" aria-hidden="true">👑</span> ' : ''}${codec.name}</strong>
+      ${isSmart ? '<span class="crown-badge">موصى به</span>' : ''}
+      <button class="tiny-help${state.help === codec.id ? ' is-current' : ''}" data-help="${codec.id}" type="button" aria-label="شرح ${codec.name}">${icon('help', 18)}</button>
+    </div>
     <span role="cell">${codec.size}</span><span role="cell">${codec.speed}</span><span role="cell">${codec.compatibility}</span>
   </div>`
 }
@@ -442,7 +448,7 @@ function renderReview(): string {
     ? formatBytes(isSingle ? (state.singleFileMedia?.fileSize ?? scan?.totalBytes ?? 0) : (scan?.totalBytes ?? 0))
     : (scan?.totalBytes ? formatBytes(scan.totalBytes) : '182.4 GB')
 
-  return `<div class="page page-review">${screenHeading('مراجعة الدفعة والتحقق البصري', 'تحقق من جودة المشاهد وقائمة الملفات قبل تأكيد المعالجة', true)}
+  return `<div class="page page-review">${screenHeading('مراجعة الدفعة وقائمة الملفات', 'تحقق من تفاصيل الدفعة وقائمة الملفات قبل تأكيد المعالجة', true)}
     <section class="review-summary"><h2>الملفات المحددة للدفعة</h2>
       <div class="summary-line"><span>مجلد المصدر</span><strong>${escapeHtml(state.sourceName)}</strong></div>
       <div class="summary-line"><span>مجلد الحفظ</span><strong>${escapeHtml(state.outputName)}</strong></div>
@@ -451,9 +457,6 @@ function renderReview(): string {
       <div class="summary-line"><span>الغرض المعتمد</span><strong>${state.mode === 'publish' ? 'النشر والمشاركة' : 'الأرشفة عالية الجودة (FFV1)'}</strong></div>
       <div class="summary-line"><span>الترميز</span><strong>${getCodec(state.codec).name}</strong></div>
     </section>
-
-    <!-- Predictive Storage Meter -->
-    <div id="storage-meter-mount"></div>
 
     <!-- Advanced Video Engineering & Pre-Processing Tools -->
     <div class="video-tools-ribbon" role="toolbar" aria-label="أدوات معالجة الفيديو المتقدمة">
@@ -470,13 +473,6 @@ function renderReview(): string {
         </button>
       </div>
     </div>
-
-    <!-- Visual A/B Compare Tool Mount Point -->
-    <div class="section-title">
-      <h2>فحص الجودة البصرية التفاعلي (A/B)</h2>
-      <span>قارن دقة المشاهد قبل وبعد المعالجة مع إمكانية استخدام عدسة التكبير وخريطة التباين</span>
-    </div>
-    <div id="review-compare-mount" class="compare-container"></div>
 
     <div class="review-note">${icon('shield', 21)}<div><strong>ضمانة سلامة الأصول الأصلية</strong>
       <p>الأصول الأصلية محمية بصريًا ورياضيًا وتبقى للقراءة فقط. لن يتم تغيير أي ملف مصدري مطلقًا أثناء المعالجة.</p>
@@ -539,13 +535,17 @@ function renderProgress(): string {
   const percent = isDesktop ? (total ? Math.round(100 * completed / total) : 0) : state.progress
   const paused = isDesktop ? (batch?.paused ?? false) : state.paused
   const verifiedSavings = isDesktop ? formatBytes(batch?.verifiedSavingsBytes ?? 0) : '318.6 GB'
+  const pauseLabel = total === 0 ? 'لا توجد مهام' : (paused ? 'استئناف' : 'إيقاف مؤقت')
+  const pauseIcon = total === 0 ? 'pause' : (paused ? 'play' : 'pause')
+  const pauseDisabled = isDesktop ? (!batch?.running || total === 0) : false
+  const cancelDisabled = isDesktop ? (!batch?.running || total === 0) : false
 
   return `<div class="page page-progress">${screenHeading('معالجة الدفعة', 'المساحة الموفرة محسوبة فقط للملفات التي اجتازت شروط التحقق')}
     <section class="progress-panel"><div class="progress-main"><div class="progress-copy">
       <h2><span class="latin">${completed.toLocaleString('en-US')}</span> من <span class="latin">${total.toLocaleString('en-US')}</span> فيديو</h2>
       <div class="main-track" role="progressbar" aria-label="تقدم الدفعة" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><div style="width:${percent}%"></div></div>
       <span class="track-value latin">${percent}%</span></div>
-      <div class="progress-buttons">${button(`${icon(paused ? 'play' : 'pause', 17)} ${paused ? 'استئناف' : 'إيقاف مؤقت'}`, 'pause-preview', 'primary', isDesktop && !batch?.running ? 'disabled' : '')}${button('إلغاء الدفعة', 'cancel-preview', 'outline', isDesktop && !batch?.running ? 'disabled' : '')}</div></div>
+      <div class="progress-buttons">${button(`${icon(pauseIcon, 17)} ${pauseLabel}`, 'pause-preview', 'primary', pauseDisabled ? 'disabled' : '')}${button('إلغاء الدفعة', 'cancel-preview', 'outline', cancelDisabled ? 'disabled' : '')}</div></div>
       <dl class="inline-metrics">
         <div><dt>قيد المعالجة</dt><dd>${isDesktop ? (batch?.active ?? 0) : 3} ملفات</dd></div>
         <div><dt>بانتظار الدور</dt><dd>${isDesktop ? (batch?.queued ?? total) : '1,245'} ملفات</dd></div>
@@ -735,24 +735,24 @@ function renderSettings(): string {
       <section class="setting-card">
         <h2>سياسة الجودة وضمان سلامة الأصول</h2>
         <p class="setting-description">ضوابط إلزامية لحماية المواد الإعلامية الحكومية وفق المعايير الوطنية.</p>
-        <div class="resource-spec">
-          <div><span>حماية المصدر الأصلي:</span> <strong>قراءة فقط (Read-Only) مع منع أي كتابة على الملف الأصلي</strong></div>
-          <div><span>التحقق من السلامة:</span> <strong>فحص Framemd5 لضمان عدم سقوط أي إطار فيديو</strong></div>
-          <div><span>النشر الذري (Atomic):</span> <strong>كتابة مؤقتة في .mar2i-tmp ونقل ذري عند النجاح فقط</strong></div>
+        <div class="about-meta-grid">
+          <div class="about-meta-row"><span class="about-meta-label">حماية المصدر الأصلي:</span> <strong class="about-meta-val">قراءة فقط <bdi dir="ltr">(Read-Only)</bdi> دون أي تعديل على الملف الأصلي</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">التحقق من السلامة:</span> <strong class="about-meta-val">فحص <bdi dir="ltr">Framemd5</bdi> لضمان عدم سقوط أي إطار فيديو</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">النشر الذري الآمن:</span> <strong class="about-meta-val">كتابة مؤقتة في <bdi dir="ltr">.mar2i-tmp</bdi> ونقل ذري عند اكتمال التحقق فقط</strong></div>
         </div>
       </section>
 
       <section class="setting-card">
         <h2>عن تطبيق مرئي والإصدار</h2>
         <p class="setting-description">بيانات الإصدار الحالي والملكية الفكرية وبيئة التشغيل المعتمدة للنظام.</p>
-        <div class="resource-spec">
-          <div><span>الجهة المالكة:</span> <strong>${APP_ORGANIZATION}</strong></div>
-          <div><span>القسم المطور:</span> <strong>${APP_DEPARTMENT}</strong></div>
-          <div><span>الإصدار البرمجي:</span> <strong dir="ltr">الإصدار ${APP_VERSION} (المستقر)</strong></div>
-          <div><span>تاريخ البناء والإطلاق:</span> <strong>${APP_BUILD_DATE}</strong></div>
-          <div><span>بيئة التشغيل والعتاد:</span> <strong>${APP_TARGET_ARCH}</strong></div>
-          <div><span>نواة المعالجة:</span> <strong>${APP_ENGINE_INFO}</strong></div>
-          <div><span>حالة الاتصال:</span> <span class="setting-badge badge-green">يعمل محلياً دون اتصال 100%</span></div>
+        <div class="about-meta-grid">
+          <div class="about-meta-row"><span class="about-meta-label">الجهة المالكة:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_ORGANIZATION}</bdi></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">القسم المطور:</span> <strong class="about-meta-val">${APP_DEPARTMENT}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">الإصدار البرمجي:</span> <strong class="about-meta-val">الإصدار <bdi dir="ltr">${APP_VERSION}</bdi> (المستقر)</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">تاريخ البناء والإطلاق:</span> <strong class="about-meta-val">${APP_BUILD_DATE}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">معمارية النظام:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_TARGET_ARCH}</bdi></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">نواة المعالجة:</span> <strong class="about-meta-val">${APP_ENGINE_INFO}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">حالة الاتصال:</span> <span class="setting-badge badge-green">يعمل محلياً دون اتصال 100%</span></div>
         </div>
         <div class="about-legal-card">
           <div class="about-legal-header">
@@ -779,19 +779,19 @@ function dialogMarkup(): string {
       <div class="about-modal-content">
         <div class="about-header">
           <div class="brand"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></span><span>مرئي</span></div>
-          <span class="setting-badge badge-green">الإصدار ${APP_VERSION} (مستقر)</span>
+          <span class="setting-badge badge-green">الإصدار <bdi dir="ltr">${APP_VERSION}</bdi> (مستقر)</span>
         </div>
         <h2 id="dialog-heading">${APP_RELEASE_NAME}</h2>
         <p class="about-desc">منظومة معالجة وأرشفة ملفات الفيديو الحكومية المستقلة تماماً والآمنة دون اتصال بالإنترنت.</p>
-        <div class="resource-spec">
-          <div><span>الجهة المالكة:</span> <strong>${APP_ORGANIZATION}</strong></div>
-          <div><span>القسم المطور:</span> <strong>${APP_DEPARTMENT}</strong></div>
-          <div><span>رقم الإصدار:</span> <strong dir="ltr">${APP_VERSION}</strong></div>
-          <div><span>تاريخ الإصدار:</span> <strong>${APP_BUILD_DATE}</strong></div>
-          <div><span>معمارية النظام:</span> <strong>${APP_TARGET_ARCH}</strong></div>
-          <div><span>بيئة التشغيل:</span> <strong>${APP_ENGINE_INFO}</strong></div>
-          <div><span>مستوى الأمان:</span> <strong>حماية الأصول الأصلية (Read-Only) + فحص Framemd5</strong></div>
-          <div><span>الاستقلالية:</span> <strong style="color: var(--green);">100% يعمل محلياً دون أي اتصال خارجي</strong></div>
+        <div class="about-meta-grid">
+          <div class="about-meta-row"><span class="about-meta-label">الجهة المالكة:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_ORGANIZATION}</bdi></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">القسم المطور:</span> <strong class="about-meta-val">${APP_DEPARTMENT}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">رقم الإصدار:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_VERSION}</bdi></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">تاريخ الإصدار:</span> <strong class="about-meta-val">${APP_BUILD_DATE}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">معمارية النظام:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_TARGET_ARCH}</bdi></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">بيئة التشغيل:</span> <strong class="about-meta-val">${APP_ENGINE_INFO}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">مستوى الأمان:</span> <strong class="about-meta-val">حماية الأصول الأصلية <bdi dir="ltr">(Read-Only)</bdi> + فحص <bdi dir="ltr">Framemd5</bdi></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">الاستقلالية:</span> <strong class="about-meta-val" style="color: var(--green);">100% يعمل محلياً دون أي اتصال خارجي</strong></div>
         </div>
         <div class="about-legal-card">
           <div class="about-legal-header">
@@ -849,7 +849,7 @@ function render(): void {
           <div id="dynamic-island-slot" class="dynamic-island-container"></div>
           <div class="window-bar">
             <span>مرئي <span class="bar-separator">/</span> إدارة ملفات الفيديو الحكومية</span>
-            <span class="window-status"><span class="availability-dot"></span> ${isDesktop ? 'تشغيل محلي (Tauri + Rust)' : 'معاينة تفاعلية'}</span>
+            <span class="window-status"><span class="availability-dot"></span> ${isDesktop ? 'يعمل محلياً بأمان دون اتصال' : 'معاينة تفاعلية'}</span>
           </div>
           <main id="main-content" tabindex="-1">
             ${state.notice ? `<div class="native-notice" role="status">${escapeHtml(state.notice)}</div>` : ''}
