@@ -30,7 +30,6 @@ import {
   getCodec,
   getSampleProbeData,
   ministryPresets,
-  projectCodecSavings,
   progressPageWindow,
   reportCsv,
   sampleFiles,
@@ -40,23 +39,19 @@ import {
   type Resource,
   type Screen,
 } from './data'
-import { CompareSlider } from './compare-slider'
 import { DynamicIsland, type QueueItem } from './widgets/dynamic-island'
 import { VideoTrimmer } from './widgets/video-trimmer'
 import { AspectRatioStudio } from './widgets/aspect-ratio-studio'
 import { ForensicProbeDrawer } from './widgets/forensic-probe'
-import { StorageMeter } from './widgets/storage-meter'
 import { ImpactCertificate } from './widgets/impact-certificate'
 import { BatchActionBar } from './widgets/batch-action-bar'
 import {
   APP_VERSION,
-  APP_RELEASE_NAME,
   APP_BUILD_DATE,
   APP_TARGET_ARCH,
   APP_ENGINE_INFO,
   APP_ORGANIZATION,
   APP_DEPARTMENT,
-  APP_LEGAL_COPYRIGHT,
   APP_LEGAL_RESTRICTION,
 } from './version'
 
@@ -86,7 +81,6 @@ type UiState = {
   paused: boolean
   dialog: FolderDialog
   hardwareReport: HardwareReport | null
-  compareSliderInstance: CompareSlider | null
   dynamicIslandInstance: DynamicIsland | null
   selectedFileIds: Set<string>
   activeTrimmerFile: string | null
@@ -135,7 +129,6 @@ const state: UiState = {
   paused: true,
   dialog: null,
   hardwareReport: null,
-  compareSliderInstance: null,
   dynamicIslandInstance: null,
   selectedFileIds: new Set<string>(),
   activeTrimmerFile: null,
@@ -365,6 +358,14 @@ function renderNew(): string {
       </div>
       <button class="help-trigger" type="button" data-action="show-selected-help" aria-label="شرح اختيار الترميز">${icon('help', 22)}</button>
       <p>${state.codec === 'auto' ? 'يختار التطبيق الأنسب لكل فيديو بحسب الهدف والجودة المطلوبة' : getCodec(state.codec).description}</p>
+      ${state.codec === 'smart_abr' ? `
+      <div class="smart-abr-callout" role="note">
+        <span class="crown-icon" aria-hidden="true">👑</span>
+        <div class="smart-abr-callout-text">
+          <strong>الخيار الموصى به لمعالجة الفيديو الذكية:</strong>
+          <span>تقليص حجم الفيديو بنسبة 50% مع الحفاظ التام على أبعاد 1080p ومعدل الإطارات ونسخ الصوت دون إعادة ترميز لضمان أعلى سرعة ونقاء.</span>
+        </div>
+      </div>` : ''}
     </section>
     <button class="btn btn-outline options-link-btn" type="button" data-screen="options" data-action="go-options">عرض خيارات الضغط والتقديرات ${icon('arrow', 17)}</button>
     <footer class="page-actions">${button(analyzeLabel, 'analyze', 'primary', state.analyzing ? 'disabled' : '')}${button('إلغاء', 'reset-new', 'outline')}</footer>
@@ -379,7 +380,7 @@ function codecRow(codec: typeof codecs[number]): string {
     <div class="codec-name" role="cell">
       <input type="radio" name="codec" value="${codec.id}" ${active ? 'checked' : ''} aria-label="اختيار ${codec.name}" />
       <strong dir="rtl">${isSmart ? '<span class="crown-icon" aria-hidden="true">👑</span> ' : ''}${codec.name}</strong>
-      ${isSmart ? '<span class="crown-badge">موصى به</span>' : ''}
+      ${isSmart ? '<span class="crown-badge">👑 موصى به</span>' : ''}
       <button class="tiny-help${state.help === codec.id ? ' is-current' : ''}" data-help="${codec.id}" type="button" aria-label="شرح ${codec.name}">${icon('help', 18)}</button>
     </div>
     <span role="cell">${codec.size}</span><span role="cell">${codec.speed}</span><span role="cell">${codec.compatibility}</span>
@@ -403,16 +404,13 @@ function toggle(): string {
 function renderOptions(): string {
   const selected = getCodec(state.help)
   const mismatch = state.mode === 'publish' && state.codec === 'ffv1'
-  const showPresetsAndMeter = !isDesktop || state.sourcePath !== null
+  const showPresets = !isDesktop || state.sourcePath !== null
 
   return `<div class="page page-options">${screenHeading('خيارات الضغط والتوقعات', 'اختر ما يناسب استخدام الفيديو واطلع على التوفير المتوقع', true)}
     <div class="segmented" role="group" aria-label="غرض المعالجة"><button class="${state.mode === 'publish' ? 'active' : ''}" data-mode="publish" aria-pressed="${state.mode === 'publish'}">النشر والمشاركة</button><button class="${state.mode === 'archive' ? 'active' : ''}" data-mode="archive" aria-pressed="${state.mode === 'archive'}">الأرشفة عالية الجودة</button></div>
 
-    <!-- Live Predictive Storage Savings Meter Mount -->
-    ${showPresetsAndMeter ? '<div id="storage-meter-mount"></div>' : ''}
-
     <!-- Official Ministry Presets -->
-    ${showPresetsAndMeter ? `<div class="preset-section">
+    ${showPresets ? `<div class="preset-section">
       <h3>نماذج مقترحة لاحتياجات وزارة الحج والعمرة</h3>
       <div class="preset-grid">
         ${ministryPresets.map((preset) => `
@@ -434,10 +432,6 @@ function renderOptions(): string {
     <footer class="page-actions">${button('حفظ الخيارات', 'save-options', 'primary')}${button('رجوع', 'back-new', 'outline')}</footer>
   </div>`
 }
-
-// Sample frame data SVGs for A/B demonstration
-const sampleOriginalFrame = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540"><rect width="960" height="540" fill="%231a2621"/><circle cx="480" cy="270" r="140" fill="%232b473b" stroke="%233e6b59" stroke-width="4"/><path d="M480 150 L560 350 L400 350 Z" fill="%23b8893d"/><text x="480" y="440" fill="%23dce4de" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle">المصدر الأصلي (ProRes 422 HQ / 4K UHD)</text><text x="480" y="475" fill="%2382998e" font-size="16" font-family="sans-serif" text-anchor="middle">معدل البت: 180 Mbps | عمق لوني: 10-bit</text></svg>`
-const sampleCompressedFrame = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540"><rect width="960" height="540" fill="%23141f1a"/><circle cx="480" cy="270" r="140" fill="%23233b31" stroke="%23385e4e" stroke-width="4"/><path d="M480 150 L560 350 L400 350 Z" fill="%23b08235"/><text x="480" y="440" fill="%23c2d6c9" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle">النسخة المعالجة (HEVC 10-bit / 4K UHD)</text><text x="480" y="475" fill="%2368947d" font-size="16" font-family="sans-serif" text-anchor="middle">معدل البت: 18 Mbps | توفير 90% | SSIM: 0.988</text></svg>`
 
 function renderReview(): string {
   const scan = state.analysis
@@ -531,14 +525,31 @@ function renderProgressPagination(totalJobs: number): string {
 function renderProgress(): string {
   const batch = state.batch
   const total = isDesktop ? (batch?.files ?? state.analysis?.total ?? 0) : 1248
+  const isRunning = isDesktop ? (batch?.running ?? false) : false
   const completed = isDesktop ? ((batch?.completed ?? 0) + (batch?.skipped ?? 0) + (batch?.failed ?? 0)) : Math.round(1248 * state.progress / 100)
   const percent = isDesktop ? (total ? Math.round(100 * completed / total) : 0) : state.progress
   const paused = isDesktop ? (batch?.paused ?? false) : state.paused
   const verifiedSavings = isDesktop ? formatBytes(batch?.verifiedSavingsBytes ?? 0) : '318.6 GB'
-  const pauseLabel = total === 0 ? 'لا توجد مهام' : (paused ? 'استئناف' : 'إيقاف مؤقت')
-  const pauseIcon = total === 0 ? 'pause' : (paused ? 'play' : 'pause')
-  const pauseDisabled = isDesktop ? (!batch?.running || total === 0) : false
-  const cancelDisabled = isDesktop ? (!batch?.running || total === 0) : false
+
+  let pauseLabel: string
+  let pauseIcon: string
+  let pauseDisabled: boolean
+
+  if (!isRunning || total === 0) {
+    pauseLabel = 'لا توجد مهام جارية'
+    pauseIcon = 'play'
+    pauseDisabled = true
+  } else if (paused) {
+    pauseLabel = 'استئناف المعالجة'
+    pauseIcon = 'play'
+    pauseDisabled = false
+  } else {
+    pauseLabel = 'إيقاف مؤقت'
+    pauseIcon = 'pause'
+    pauseDisabled = false
+  }
+
+  const cancelDisabled = !isRunning || total === 0
 
   return `<div class="page page-progress">${screenHeading('معالجة الدفعة', 'المساحة الموفرة محسوبة فقط للملفات التي اجتازت شروط التحقق')}
     <section class="progress-panel"><div class="progress-main"><div class="progress-copy">
@@ -746,19 +757,19 @@ function renderSettings(): string {
         <h2>عن تطبيق مرئي والإصدار</h2>
         <p class="setting-description">بيانات الإصدار الحالي والملكية الفكرية وبيئة التشغيل المعتمدة للنظام.</p>
         <div class="about-meta-grid">
-          <div class="about-meta-row"><span class="about-meta-label">الجهة المالكة:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_ORGANIZATION}</bdi></strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">القسم المطور:</span> <strong class="about-meta-val">${APP_DEPARTMENT}</strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">الإصدار البرمجي:</span> <strong class="about-meta-val">الإصدار <bdi dir="ltr">${APP_VERSION}</bdi> (المستقر)</strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">تاريخ البناء والإطلاق:</span> <strong class="about-meta-val">${APP_BUILD_DATE}</strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">معمارية النظام:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_TARGET_ARCH}</bdi></strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">نواة المعالجة:</span> <strong class="about-meta-val">${APP_ENGINE_INFO}</strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">حالة الاتصال:</span> <span class="setting-badge badge-green">يعمل محلياً دون اتصال 100%</span></div>
+          <div class="about-meta-row"><span class="about-meta-label">الجهة المالكة</span> <strong class="about-meta-val"><span class="val-en" dir="ltr">${APP_ORGANIZATION}</span></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">القسم المطور</span> <strong class="about-meta-val">${APP_DEPARTMENT}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">الإصدار البرمجي</span> <strong class="about-meta-val">الإصدار <span class="val-en" dir="ltr">${APP_VERSION}</span> (المستقر)</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">تاريخ البناء والإطلاق</span> <strong class="about-meta-val">${APP_BUILD_DATE}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">معمارية النظام</span> <strong class="about-meta-val"><span class="val-en" dir="ltr">${APP_TARGET_ARCH}</span></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">نواة المعالجة</span> <strong class="about-meta-val">${APP_ENGINE_INFO}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">حالة الاتصال</span> <span class="setting-badge badge-green">يعمل محلياً دون اتصال 100%</span></div>
         </div>
         <div class="about-legal-card">
           <div class="about-legal-header">
             <span class="legal-badge">إشعار الملكية الفكرية والحماية القانونية</span>
           </div>
-          <p class="about-legal-title">${APP_LEGAL_COPYRIGHT}</p>
+          <p class="about-legal-title">جميع الحقوق محفوظة لشركة <span class="val-en" dir="ltr">4STEPS KSA</span> — قسم التطوير والذكاء الاصطناعي والحلول الرقمية © 2026</p>
           <p class="about-legal-text">${APP_LEGAL_RESTRICTION}</p>
         </div>
       </section>
@@ -776,28 +787,28 @@ function dialogMarkup(): string {
 
   if (state.dialog === 'about') {
     return `<dialog id="app-dialog" class="app-dialog about-dialog" aria-labelledby="dialog-heading">
-      <div class="about-modal-content">
+      <div class="about-modal-content" dir="rtl">
         <div class="about-header">
           <div class="brand"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></span><span>مرئي</span></div>
-          <span class="setting-badge badge-green">الإصدار <bdi dir="ltr">${APP_VERSION}</bdi> (مستقر)</span>
+          <span class="setting-badge badge-green">الإصدار <span class="val-en" dir="ltr">${APP_VERSION}</span> (مستقر)</span>
         </div>
-        <h2 id="dialog-heading">${APP_RELEASE_NAME}</h2>
+        <h2 id="dialog-heading" class="about-app-title">مرئي <span class="val-en" dir="ltr">(Mar2i)</span> — الإصدار المستقر</h2>
         <p class="about-desc">منظومة معالجة وأرشفة ملفات الفيديو الحكومية المستقلة تماماً والآمنة دون اتصال بالإنترنت.</p>
         <div class="about-meta-grid">
-          <div class="about-meta-row"><span class="about-meta-label">الجهة المالكة:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_ORGANIZATION}</bdi></strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">القسم المطور:</span> <strong class="about-meta-val">${APP_DEPARTMENT}</strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">رقم الإصدار:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_VERSION}</bdi></strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">تاريخ الإصدار:</span> <strong class="about-meta-val">${APP_BUILD_DATE}</strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">معمارية النظام:</span> <strong class="about-meta-val"><bdi dir="ltr">${APP_TARGET_ARCH}</bdi></strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">بيئة التشغيل:</span> <strong class="about-meta-val">${APP_ENGINE_INFO}</strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">مستوى الأمان:</span> <strong class="about-meta-val">حماية الأصول الأصلية <bdi dir="ltr">(Read-Only)</bdi> + فحص <bdi dir="ltr">Framemd5</bdi></strong></div>
-          <div class="about-meta-row"><span class="about-meta-label">الاستقلالية:</span> <strong class="about-meta-val" style="color: var(--green);">100% يعمل محلياً دون أي اتصال خارجي</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">الجهة المالكة</span> <strong class="about-meta-val"><span class="val-en" dir="ltr">${APP_ORGANIZATION}</span></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">القسم المطور</span> <strong class="about-meta-val">${APP_DEPARTMENT}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">رقم الإصدار</span> <strong class="about-meta-val"><span class="val-en" dir="ltr">${APP_VERSION}</span></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">تاريخ الإصدار</span> <strong class="about-meta-val">${APP_BUILD_DATE}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">معمارية النظام</span> <strong class="about-meta-val"><span class="val-en" dir="ltr">${APP_TARGET_ARCH}</span></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">نواة المعالجة</span> <strong class="about-meta-val">${APP_ENGINE_INFO}</strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">مستوى الأمان</span> <strong class="about-meta-val">حماية الأصول الأصلية <span class="val-en" dir="ltr">(Read-Only)</span> + فحص <span class="val-en" dir="ltr">Framemd5</span></strong></div>
+          <div class="about-meta-row"><span class="about-meta-label">الاستقلالية</span> <strong class="about-meta-val highlight-green">100% يعمل محلياً دون أي اتصال خارجي</strong></div>
         </div>
         <div class="about-legal-card">
           <div class="about-legal-header">
             <span class="legal-badge">إشعار الملكية الفكرية والحماية القانونية</span>
           </div>
-          <p class="about-legal-title">${APP_LEGAL_COPYRIGHT}</p>
+          <p class="about-legal-title">جميع الحقوق محفوظة لشركة <span class="val-en" dir="ltr">4STEPS KSA</span> — قسم التطوير والذكاء الاصطناعي والحلول الرقمية © 2026</p>
           <p class="about-legal-text">${APP_LEGAL_RESTRICTION}</p>
         </div>
         <div class="dialog-actions" style="margin-top: 20px;">
@@ -977,66 +988,7 @@ function render(): void {
     })
   }
 
-  // 2. Mount CompareSlider if on review screen
-  if (state.screen === 'review') {
-    const mount = document.querySelector<HTMLElement>('#review-compare-mount')
-
-    if (mount) {
-      const beforeImg = state.comparisonOriginalFrame ?? sampleOriginalFrame
-      const afterImg = state.comparisonCompressedFrame ?? sampleCompressedFrame
-      const ssim = state.comparisonSsim ?? 0.992
-
-      state.compareSliderInstance = new CompareSlider({
-        container: mount,
-        beforeImage: beforeImg,
-        afterImage: afterImg,
-        beforeLabel: state.sourceName ? `المصدر: ${state.sourceName}` : 'المصدر الأصلي',
-        afterLabel: `النسخة المضغوطة (${getCodec(state.codec).name})`,
-        ssimScore: ssim,
-        isMeasuredScore: state.comparisonSsim !== null,
-        initialPosition: 50,
-      })
-    }
-  }
-
-  // 3. Mount StorageMeter if on review or options screen
-  const storageMount = document.querySelector<HTMLElement>('#storage-meter-mount')
-
-  if (storageMount) {
-    const totalBytes = state.sourceType === 'file'
-      ? (state.singleFileMedia?.fileSize ?? 0)
-      : (state.analysis?.totalBytes ?? 0)
-
-    if (isDesktop) {
-      if (totalBytes > 0) {
-        const approxInputGb = totalBytes / (1024 * 1024 * 1024)
-        const forecast = projectCodecSavings(approxInputGb, state.codec, state.mode)
-        new StorageMeter({
-          container: storageMount,
-          forecast: {
-            sourceBytes: totalBytes,
-            estimatedOutputBytes: Math.max(0, (approxInputGb - forecast.savedGb) * 1024 * 1024 * 1024),
-            codecName: getCodec(state.codec).name,
-            mode: state.mode,
-          },
-        })
-      }
-    } else {
-      const approxInputGb = state.analysis?.totalBytes ? state.analysis.totalBytes / (1024 * 1024 * 1024) : 148.5
-      const forecast = projectCodecSavings(approxInputGb, state.codec, state.mode)
-      new StorageMeter({
-        container: storageMount,
-        forecast: {
-          sourceBytes: approxInputGb * 1024 * 1024 * 1024,
-          estimatedOutputBytes: (approxInputGb - forecast.savedGb) * 1024 * 1024 * 1024,
-          codecName: getCodec(state.codec).name,
-          mode: state.mode,
-        },
-      })
-    }
-  }
-
-  // 4. Mount ImpactCertificate if on results screen
+  // 2. Mount ImpactCertificate if on results screen
   const certMount = document.querySelector<HTMLElement>('#results-certificate-mount')
 
   const hasResultsForCert = isDesktop
