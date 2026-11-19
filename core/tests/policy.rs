@@ -48,13 +48,14 @@ fn lossy_source_is_not_reframed_as_lossless_archive() {
 }
 
 #[test]
-fn compressed_h264_below_size_threshold_is_copied_not_reencoded() {
+fn compressed_h264_moderate_bitrate_is_smart_abr_compressed() {
     let mut p = example("h264");
     p.video_bitrate = Some(2_000_000);
     p.pix_fmt = "yuv420p".into();
+    let plan = choose_plan(&p, Mode::Publishing);
     assert!(matches!(
-        choose_plan(&p, Mode::Publishing),
-        Decision::Copy { .. }
+        plan,
+        Decision::EncodeAbr { target_kbps, .. } if target_kbps > 0
     ));
 }
 
@@ -121,12 +122,16 @@ fn hdr_source_is_rejected_until_color_pipeline_is_verified() {
 }
 
 #[test]
-fn variable_frame_rate_is_not_forced_to_cfr() {
+fn variable_frame_rate_is_compressed_preserving_timestamps() {
     let mut p = example("h264");
     p.variable_frame_rate = true;
+    let plan = choose_plan(&p, Mode::Publishing);
     assert!(matches!(
-        choose_plan(&p, Mode::Publishing),
-        Decision::Copy { .. }
+        plan,
+        Decision::Encode {
+            codec: "libx264",
+            ..
+        } | Decision::EncodeAbr { .. }
     ));
 }
 

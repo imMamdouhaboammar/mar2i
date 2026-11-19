@@ -488,6 +488,7 @@ function progressRows(): string {
 function statusLabel(status: string): string {
   switch (status) {
     case 'completed': return 'مكتمل'
+    case 'copied': return 'محفوظ دون تغيير'
     case 'skipped': return 'تم التخطي'
     case 'failed': return 'فشل'
     case 'processing': return 'جارٍ الضغط'
@@ -503,7 +504,7 @@ function nativeProgressRows() {
   const { start, end } = progressPageWindow(jobs.length, state.progressPage)
 
   return jobs.slice(start, end).map((job) => {
-    const done = ['completed', 'skipped', 'failed'].includes(job.status)
+    const done = ['completed', 'skipped', 'copied', 'failed'].includes(job.status)
 
     return `<tr><td class="name-cell">${icon('video', 18)}<span>${escapeHtml(job.relative)}</span></td>
       <td class="latin">${formatBytes(job.inputBytes)}</td><td class="latin">${job.outputBytes === null ? 'غير متاح' : formatBytes(job.outputBytes)}</td>
@@ -669,7 +670,7 @@ function nativeResultRows() {
   return jobs.map((job) => {
     const name = escapeHtml(job.relative)
     const saving = job.status === 'completed' && job.outputBytes !== null && job.inputBytes > 0 ? Math.max(0, 100 * (job.inputBytes - job.outputBytes) / job.inputBytes) : 0
-    const label = job.status === 'completed' ? 'مكتمل' : job.status === 'skipped' ? 'دون تغيير' : job.status === 'failed' ? 'فشل' : 'قيد العمل'
+    const label = job.status === 'completed' ? 'مكتمل' : job.status === 'copied' ? 'محفوظ دون تغيير' : job.status === 'skipped' ? 'دون تغيير' : job.status === 'failed' ? 'فشل' : 'قيد العمل'
     const isSelected = state.selectedFileIds.has(job.relative)
 
     return `<tr class="${isSelected ? 'row-selected' : ''}">
@@ -1350,7 +1351,9 @@ async function handleNativeAction(action: string): Promise<boolean> {
       })
 
       state.singleFileReport = report
-      state.notice = `اكتمل ضغط الفيديو بنجاح! تم تقليص الحجم بنسبة ${report.sizeReductionPercent}% مع الحفاظ التام على الأبعاد والصوت.`
+      state.notice = report.sizeReductionPercent > 0
+        ? `اكتمل ضغط الفيديو بنجاح! تم تقليص الحجم بنسبة ${report.sizeReductionPercent}% مع الحفاظ التام على الأبعاد والصوت.`
+        : 'تم التحقق من سلامة الفيديو؛ الملف الأصلي عند أعلى كفاءة وضغط ممكن.'
 
       try {
         const frames = await extractComparisonFrames(report.sourcePath, report.outputPath, 1.0)
@@ -1626,7 +1629,9 @@ async function handleNativeAction(action: string): Promise<boolean> {
         })
 
         state.singleFileReport = report
-        state.notice = `اكتمل ضغط الفيديو بنجاح! تم تقليص الحجم بنسبة ${report.sizeReductionPercent}%.`
+        state.notice = report.sizeReductionPercent > 0
+          ? `اكتمل ضغط الفيديو بنجاح! تم تقليص الحجم بنسبة ${report.sizeReductionPercent}%.`
+          : 'تم التحقق من سلامة الفيديو؛ الملف الأصلي عند أعلى كفاءة وضغط ممكن.'
 
         try {
           const frames = await extractComparisonFrames(report.sourcePath, report.outputPath, 1.0)

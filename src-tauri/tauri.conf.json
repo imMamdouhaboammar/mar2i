@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Mar2i",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "identifier": "com.mamdouh.mar2i",
   "build": {
     "frontendDist": "../dist",

@@ -98,7 +98,35 @@ jobs:
         shell: bash
         run: |
           rm -rf src-tauri/target/release/bundle || true
-          bunx tauri build
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            echo "Building macOS application bundle..."
+            bunx tauri build --bundles app
+
+            APP_PATH="src-tauri/target/release/bundle/macos/Mar2i.app"
+            if [ -d "$APP_PATH" ]; then
+              echo "Applying ad-hoc code signature to nested sidecar binaries..."
+              find "$APP_PATH/Contents/Resources" -type f -perm +111 -exec codesign --force --options runtime --sign - {} + 2>/dev/null || true
+              echo "Applying ad-hoc code signature to main app bundle..."
+              codesign --force --options runtime --deep --sign - "$APP_PATH"
+              echo "Verifying code signature..."
+              codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+            fi
+
+            echo "Packaging DMG containing signed bundle..."
+            STAGING_DIR="$(mktemp -d)/dmg-staging"
+            mkdir -p "$STAGING_DIR"
+            cp -R "$APP_PATH" "$STAGING_DIR/"
+            ln -s /Applications "$STAGING_DIR/Applications"
+            mkdir -p src-tauri/target/release/bundle/dmg
+
+            VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+            DMG_OUT="src-tauri/target/release/bundle/dmg/Mar2i_${VERSION}_aarch64.dmg"
+            hdiutil create -volname "Mar2i" -srcfolder "$STAGING_DIR" -ov -format UDZO "$DMG_OUT"
+            rm -rf "$STAGING_DIR"
+            ls -la src-tauri/target/release/bundle/dmg/
+          else
+            bunx tauri build
+          fi
 
       - name: Prepare staged artifacts
         if: steps.filter.outputs.skip != 'true'
@@ -113,6 +141,9 @@ jobs:
           fi
           cd release-artifacts
           shasum -a 256 * > SHA256SUMS-${{ matrix.id }}.txt 2>/dev/null || sha256sum * > SHA256SUMS-${{ matrix.id }}.txt 2>/dev/null || true
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            shasum -a 256 *.dmg > SHA256SUMS.txt 2>/dev/null || true
+          fi
           ls -la
 
       - name: Upload release artifact
@@ -142,3 +173,26 @@ jobs:
               gh release upload "$TAG" "$f" --clobber || true
             fi
           done
+
+  update-homebrew-cask:
+    name: Synchronize Homebrew Cask
+    runs-on: macos-15
+    needs: build-release
+    timeout-minutes: 15
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update Cask Formula & Sync Tap
+        shell: bash
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" != v* ]]; then
+            TAG="v$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          fi
+          VERSION="${TAG#v}"
+          echo "Updating Homebrew Cask for release $VERSION..."
+          ./scripts/update-homebrew-cask.sh --version="$VERSION"

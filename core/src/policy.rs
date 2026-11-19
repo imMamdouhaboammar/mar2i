@@ -198,25 +198,22 @@ fn smart_abr_plan(profile: &MediaProfile) -> Decision {
     };
 
     let min_safe_kbps =
-        (profile.width as f64 * profile.height as f64 * profile.frame_rate * 0.032) / 1000.0;
-    if let Some(video_bps) = profile.video_bitrate {
-        let video_kbps = video_bps as f64 / 1000.0;
-        if video_kbps <= min_safe_kbps {
-            return Decision::Copy {
-                reason: "already at minimum safe perceptual bitrate floor".into(),
-            };
-        }
-    }
+        (profile.width as f64 * profile.height as f64 * profile.frame_rate * 0.018) / 1000.0;
 
     let target_kbps = if let Some(video_bps) = profile.video_bitrate {
         let half_kbps = ((video_bps as f64 * 0.50 / 1000.0 - 18.5) / 50.0).round() * 50.0;
         if half_kbps < min_safe_kbps {
-            min_safe_kbps.round() as u32
+            // Anti-starvation floor: protect quality but never exceed 85% of source bitrate
+            let bounded = min_safe_kbps.round().min(video_bps as f64 * 0.85 / 1000.0);
+            ((bounded.max(250.0) / 25.0).round() as u32 * 25).max(250)
         } else {
-            half_kbps.max(300.0) as u32
+            half_kbps.max(250.0) as u32
         }
     } else {
-        2700
+        let default_target =
+            ((profile.width as f64 * profile.height as f64 * profile.frame_rate * 0.022) / 1000.0)
+                .round();
+        default_target.clamp(300.0, 3500.0) as u32
     };
 
     Decision::EncodeAbr {
@@ -326,34 +323,13 @@ pub fn choose_plan_with_preference(
                         .into(),
                 };
             }
-            if preference == CodecPreference::Auto
-                && profile.codec == "h264"
-                && profile.variable_frame_rate
-            {
-                return Decision::Copy {
-                    reason: "variable frame timing retained by copying original".into(),
-                };
-            }
-
             let (target_codec, container, crf) = match preference {
                 CodecPreference::Auto => {
-                    if media_class == MediaClass::Modern {
-                        return Decision::Copy {
-                            reason:
-                                "efficient source: compatibility must be checked before replacing"
-                                    .into(),
-                        };
-                    }
                     if profile.codec == "h264"
                         && let Some(bpp) = profile.bits_per_pixel_per_frame()
+                        && bpp <= 0.14
                     {
-                        if bpp <= 0.042 {
-                            return Decision::Copy {
-                                reason: "already-efficient H.264 source".into(),
-                            };
-                        } else if bpp <= 0.14 {
-                            return smart_abr_plan(profile);
-                        }
+                        return smart_abr_plan(profile);
                     }
                     let crf = if profile.pix_fmt.contains("10") || profile.pix_fmt.contains("12") {
                         18
@@ -365,15 +341,6 @@ pub fn choose_plan_with_preference(
                     ("libx264", "mp4", crf)
                 }
                 CodecPreference::H264 => {
-                    if profile.codec == "h264"
-                        && profile
-                            .bits_per_pixel_per_frame()
-                            .is_some_and(|bpp| bpp <= 0.042)
-                    {
-                        return Decision::Copy {
-                            reason: "already-efficient H.264 source".into(),
-                        };
-                    }
                     let crf = if profile.pix_fmt.contains("10") || profile.pix_fmt.contains("12") {
                         18
                     } else if profile.width >= 3840 {

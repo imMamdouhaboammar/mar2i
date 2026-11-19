@@ -48,6 +48,7 @@ pub fn summarize(jobs: &[Job]) -> Summary {
             summary.verified_savings_bytes.saturating_add(savings(row));
         match row.status.as_str() {
             "completed" => summary.completed += 1,
+            "copied" => summary.skipped += 1,
             "skipped" => summary.skipped += 1,
             "failed" => summary.failed += 1,
             _ => {}

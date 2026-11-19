@@ -58,3 +58,10 @@ fn default_cpu_encoders_cover_all_supported_formats() {
     assert_eq!(default_cpu_encoder("av1"), "libsvtav1");
     assert_eq!(default_cpu_encoder("ffv1"), "ffv1");
 }
+
+#[test]
+fn hardware_report_falls_back_to_libx264_when_no_hw_encoder_verified() {
+    let empty_report = HardwareReport::default();
+    let selected = empty_report.select_encoder("h264", Mode::Publishing, true);
+    assert_eq!(selected, "libx264");
+}

@@ -14,7 +14,7 @@ export type ScanResult = {
 
 export type JobStatus = {
   relative: string
-  status: 'discovered' | 'analyzed' | 'queued' | 'processing' | 'verifying' | 'completed' | 'skipped' | 'failed' | 'interrupted'
+  status: 'discovered' | 'analyzed' | 'queued' | 'processing' | 'verifying' | 'completed' | 'copied' | 'skipped' | 'failed' | 'interrupted'
   inputBytes: number
   outputBytes: number | null
   output: string | null

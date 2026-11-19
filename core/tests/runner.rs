@@ -155,3 +155,73 @@ fn publishing_compresses_high_bitrate_mezzanine_source_when_quality_passes() {
         other => panic!("expected compressed output, got {other:?}"),
     }
 }
+
+#[test]
+fn smart_abr_two_pass_handles_paths_with_spaces_and_special_characters() {
+    let tmp = tempdir().unwrap();
+    let input = tmp.path().join("source folder with spaces");
+    let output = tmp.path().join("output folder with spaces");
+    fs::create_dir_all(&input).unwrap();
+    fs::create_dir_all(&output).unwrap();
+    let original = input.join("video with spaces.mov");
+    generate(&original, "prores_ks");
+    let before = fs::metadata(&original).unwrap().len();
+
+    let result = mar2i_core::runner::run_one_with_options(
+        &binary("ffmpeg"),
+        &binary("ffprobe"),
+        &original,
+        Path::new("video with spaces.mov"),
+        &output,
+        mar2i_core::runner::RunOptions {
+            mode: Mode::Publishing,
+            preference: mar2i_core::policy::CodecPreference::SmartAbr,
+            available_encoders: None,
+            hardware_acceleration: false,
+            trim_start: None,
+            trim_end: None,
+            transform: None,
+        },
+        None,
+    )
+    .unwrap();
+
+    match result {
+        RunOutcome::Accepted {
+            output: published,
+            after,
+            ..
+        } => {
+            assert!(published.exists());
+            assert!(after < before);
+        }
+        RunOutcome::Rejected { reason } => {
+            assert!(reason.contains("already optimal") || reason.contains("SSIM"));
+        }
+        other => panic!("expected Accepted or Rejected for ABR with spaces, got {other:?}"),
+    }
+}
+
+#[test]
+fn invalid_ffmpeg_input_never_copies_to_destination() {
+    let tmp = tempdir().unwrap();
+    let input = tmp.path().join("fake.mp4");
+    let output = tmp.path().join("output");
+    fs::create_dir_all(&output).unwrap();
+    fs::write(&input, b"invalid dummy video bytes").unwrap();
+
+    let res = run_one(
+        &binary("ffmpeg"),
+        &binary("ffprobe"),
+        &input,
+        Path::new("fake.mp4"),
+        &output,
+        Mode::Publishing,
+    );
+    assert!(res.is_err(), "Must return Err on invalid input, never copy");
+    assert_eq!(
+        fs::read_dir(&output).unwrap().count(),
+        0,
+        "No file should be published to destination on failure"
+    );
+}

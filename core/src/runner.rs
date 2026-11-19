@@ -115,8 +115,17 @@ pub enum RunOutcome {
 fn checked_command(result: Output, operation: &str) -> Result<Output> {
     if !result.status.success() {
         let error = String::from_utf8_lossy(&result.stderr);
-        let truncated = error.chars().take(2000).collect::<String>();
-        bail!("{operation} failed: {truncated}");
+        let tail = error
+            .lines()
+            .rev()
+            .take(15)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
+        let exit_code = result.status.code().unwrap_or(-1);
+        bail!("{operation} failed (exit code {exit_code}):\n{tail}");
     }
     Ok(result)
 }
@@ -172,6 +181,7 @@ pub fn run_command_cancellable(
         bail!("batch cancelled before starting {operation}");
     }
 
+    command.stdin(std::process::Stdio::null());
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
 
@@ -792,6 +802,12 @@ pub fn run_one_with_registry(
                         Some("h264_videotoolbox")
                     } else if encoders.iter().any(|e| e == "h264_nvenc") {
                         Some("h264_nvenc")
+                    } else if encoders.iter().any(|e| e == "h264_qsv") {
+                        Some("h264_qsv")
+                    } else if encoders.iter().any(|e| e == "h264_amf") {
+                        Some("h264_amf")
+                    } else if encoders.iter().any(|e| e == "h264_vaapi") {
+                        Some("h264_vaapi")
                     } else {
                         None
                     }
@@ -820,6 +836,12 @@ pub fn run_one_with_registry(
                         hw_cmd.args(["-q:v", "65"]);
                     } else if hw == "h264_nvenc" {
                         hw_cmd.args(["-cq", "24"]);
+                    } else if hw == "h264_qsv" {
+                        hw_cmd.args(["-global_quality", "24"]);
+                    } else if hw == "h264_amf" {
+                        hw_cmd.args(["-rc", "cqp", "-qp_i", "24", "-qp_p", "24"]);
+                    } else if hw == "h264_vaapi" {
+                        hw_cmd.args(["-qp", "24"]);
                     }
                     if let Some(ref vf) = video_filter {
                         hw_cmd.args(["-vf", vf]);
@@ -1162,9 +1184,9 @@ pub fn run_one_with_registry(
         } => {
             let passlog_dir = tempfile::Builder::new()
                 .prefix(".mar2i-passlog-")
-                .tempdir_in(parent)?;
+                .tempdir_in(std::env::temp_dir())?;
             let passlog_prefix = passlog_dir.path().join("ffmpeg2pass");
-            let passlog_str = passlog_prefix.to_string_lossy().to_string();
+            let passlog_str = passlog_prefix.to_string_lossy().replace('\\', "/");
 
             // Pass 1: Analysis & MB-tree generation
             let mut command_pass1 = crate::silent_command(ffmpeg);
@@ -1198,8 +1220,7 @@ pub fn run_one_with_registry(
                 "-passlogfile",
             ]);
             command_pass1.arg(&passlog_str);
-            command_pass1.args(["-an", "-f", "mp4"]);
-            command_pass1.arg(if cfg!(windows) { "NUL" } else { "/dev/null" });
+            command_pass1.args(["-an", "-f", "null", "-"]);
 
             run_command_cancellable(&mut command_pass1, "Smart 2-Pass ABR (Pass 1)", control)?;
 
@@ -1294,7 +1315,7 @@ pub fn run_one_with_registry(
     if !copy && after >= input.input_bytes {
         return Ok(RunOutcome::Rejected {
             reason: format!(
-                "output would be {} bytes, not smaller than {} bytes",
+                "output would be {} bytes, not smaller than {} bytes (source is already optimal at this quality floor)",
                 after, input.input_bytes
             ),
         });

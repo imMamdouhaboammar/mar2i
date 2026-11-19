@@ -100,6 +100,17 @@ fn parse_codec(codec: &str) -> Result<CodecPreference, String> {
     }
 }
 
+fn strip_unc_prefix(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let s = path.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            return PathBuf::from(stripped);
+        }
+    }
+    path
+}
+
 pub fn resolve_media_binary(name: &str, current_exe: Option<&Path>) -> PathBuf {
     let filename = if cfg!(windows) {
         format!("{name}.exe")
@@ -112,13 +123,13 @@ pub fn resolve_media_binary(name: &str, current_exe: Option<&Path>) -> PathBuf {
     if let Ok(override_path) = std::env::var(&env_var) {
         let p = PathBuf::from(override_path);
         if p.is_file() {
-            return p;
+            return strip_unc_prefix(p);
         }
     }
     if let Ok(media_dir) = std::env::var("MAR2I_MEDIA_DIR") {
         let candidate = Path::new(&media_dir).join(&filename);
         if candidate.is_file() {
-            return candidate;
+            return strip_unc_prefix(candidate);
         }
     }
 
@@ -133,7 +144,7 @@ pub fn resolve_media_binary(name: &str, current_exe: Option<&Path>) -> PathBuf {
             parent.join("../Resources/bin").join(&filename),
         ] {
             if candidate.is_file() {
-                return std::fs::canonicalize(&candidate).unwrap_or(candidate);
+                return strip_unc_prefix(std::fs::canonicalize(&candidate).unwrap_or(candidate));
             }
         }
     }
@@ -320,7 +331,9 @@ fn batch_status(runtime: State<'_, Arc<Runtime>>) -> Result<StatusResult, String
         .collect();
     let single_control = runtime.single_control.lock().unwrap().clone();
     let is_cancelled = control.as_ref().is_some_and(|value| value.is_cancelled())
-        || single_control.as_ref().is_some_and(|value| value.is_cancelled());
+        || single_control
+            .as_ref()
+            .is_some_and(|value| value.is_cancelled());
     Ok(StatusResult {
         running: runtime.running.load(Ordering::SeqCst),
         paused: control.as_ref().is_some_and(|value| value.is_paused()),
@@ -706,12 +719,20 @@ async fn compress_single_video(
 
     let (published_path, final_size) = match outcome {
         mar2i_core::runner::RunOutcome::Accepted { output, after, .. } => (output, after),
-        mar2i_core::runner::RunOutcome::Copied { output, bytes, .. } => (output, bytes),
+        mar2i_core::runner::RunOutcome::Copied {
+            output: _,
+            bytes: _,
+            reason,
+        } => {
+            return Err(format!(
+                "لم يتم ضغط الملف لأن المصدر مطابق أو أمثل بالفعل: {reason}"
+            ));
+        }
         mar2i_core::runner::RunOutcome::Skipped { reason } => {
             return Err(format!("تم تخطي الملف: {reason}"));
         }
         mar2i_core::runner::RunOutcome::Rejected { reason } => {
-            return Err(format!("تم رفض الضغط لعدم استيفاء معايير الجودة: {reason}"));
+            return Err(format!("تعذر ضغط الملف لتحقيق توفير فعلي: {reason}"));
         }
     };
 
@@ -735,8 +756,10 @@ async fn compress_single_video(
         .and_then(|m| m.profile.audio_codecs.first().cloned())
         .unwrap_or_else(|| "aac".into());
 
-    let ssim = mar2i_core::runner::ssim_score(&ffmpeg, &source, &published_path, Some(&control)).ok();
-    let psnr = mar2i_core::runner::psnr_score(&ffmpeg, &source, &published_path, Some(&control)).ok();
+    let ssim =
+        mar2i_core::runner::ssim_score(&ffmpeg, &source, &published_path, Some(&control)).ok();
+    let psnr =
+        mar2i_core::runner::psnr_score(&ffmpeg, &source, &published_path, Some(&control)).ok();
 
     let reduction = if original_size > 0 && final_size < original_size {
         ((original_size - final_size) as f64 / original_size as f64) * 100.0
@@ -1174,6 +1197,42 @@ fn extract_comparison_frames(
     })
 }
 
+pub fn verify_media_tools(ffmpeg: &Path, ffprobe: &Path) -> Result<(), String> {
+    let ffmpeg_out = mar2i_core::silent_command(ffmpeg)
+        .arg("-version")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| {
+            format!(
+                "تعذر تشغيل أداة ffmpeg من المسار '{}': {e}",
+                ffmpeg.display()
+            )
+        })?;
+    if !ffmpeg_out.status.success() {
+        let err = String::from_utf8_lossy(&ffmpeg_out.stderr);
+        let tail = err.lines().take(5).collect::<Vec<_>>().join("\n");
+        return Err(format!("فشل تشغيل أداة ffmpeg:\n{tail}"));
+    }
+
+    let ffprobe_out = mar2i_core::silent_command(ffprobe)
+        .arg("-version")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| {
+            format!(
+                "تعذر تشغيل أداة ffprobe من المسار '{}': {e}",
+                ffprobe.display()
+            )
+        })?;
+    if !ffprobe_out.status.success() {
+        let err = String::from_utf8_lossy(&ffprobe_out.stderr);
+        let tail = err.lines().take(5).collect::<Vec<_>>().join("\n");
+        return Err(format!("فشل تشغيل أداة ffprobe:\n{tail}"));
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1205,6 +1264,13 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            let ffmpeg = media_binary("ffmpeg");
+            let ffprobe = media_binary("ffprobe");
+            if let Err(err) = verify_media_tools(&ffmpeg, &ffprobe) {
+                eprintln!("[تحذير] لم ينجح الفحص الأولي لأدوات الوسائط: {err}");
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

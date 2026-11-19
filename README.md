@@ -8,6 +8,48 @@ Offline desktop application for bulk video compression and archival — built fo
 
 ---
 
+## macOS Installation
+
+Mar2i provides two zero-cost, Gatekeeper-friendly installation channels for macOS that avoid browser quarantine attributes (`com.apple.quarantine`):
+
+### 1. One-line Terminal Install (Recommended)
+
+Run in Terminal to automatically detect architecture (Apple Silicon / Intel), download the verified release, validate SHA-256 checksums, and install to `/Applications`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/imMamdouhaboammar/mar2i/main/scripts/install-macos.sh | bash
+```
+
+*To specify an explicit version:*
+```bash
+curl -fsSL https://raw.githubusercontent.com/imMamdouhaboammar/mar2i/main/scripts/install-macos.sh | MAR2I_VERSION=0.2.3 bash
+```
+
+### 2. Homebrew Cask Install
+
+Install via Homebrew with `--no-quarantine` to bypass macOS Gatekeeper blocks:
+
+```bash
+brew tap imMamdouhaboammar/mar2i
+brew install --cask --no-quarantine mar2i
+```
+
+### Gatekeeper Verification Note
+
+Verify that zero quarantine flags are attached to the bundle:
+
+```bash
+xattr -l /Applications/Mar2i.app
+```
+
+If the output is empty, the application is clean and launches immediately without security prompts. If macOS ever blocks an ad-hoc signed open-source build:
+
+```bash
+xattr -cr /Applications/Mar2i.app
+```
+
+---
+
 ## Architecture
 
 ```

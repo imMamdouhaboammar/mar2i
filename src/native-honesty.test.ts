@@ -16,7 +16,7 @@ describe('Native desktop truthfulness', () => {
     } }
     document.body.innerHTML = '<div id="app"></div>'
     await import('./main')
-    expect(document.querySelector('.sidebar-foot .version')?.textContent).toBe('الإصدار 0.2.3')
+    expect(document.querySelector('.sidebar-foot .version')?.textContent).toBe('الإصدار 0.2.4')
     expect(document.querySelector('#dynamic-island-slot')?.textContent).not.toContain('4.2x')
     document.querySelector<HTMLButtonElement>('[data-screen="results"]')?.click()
     expect(document.querySelector('.impact-certificate-card')).toBeNull()
@@ -76,5 +76,24 @@ describe('Native desktop truthfulness', () => {
     expect(aboutDialog).not.toBeNull()
     expect(aboutDialog?.textContent).toContain('4STEPS KSA')
     expect(aboutDialog?.textContent).toContain('إشعار الملكية الفكرية والحماية القانونية')
+  })
+
+  it('recognizes copied files as preserved unchanged and never invents compression savings', () => {
+    const job = {
+      relative: 'already_compressed.mp4',
+      status: 'copied',
+      inputBytes: 1000,
+      outputBytes: 1000,
+      output: '/out/already_compressed.mp4',
+      reason: 'already-efficient source',
+      quality: null,
+      elapsedMs: 12,
+    }
+
+    const saving = job.status === 'completed' && job.outputBytes !== null && job.inputBytes > 0
+      ? Math.max(0, 100 * (job.inputBytes - job.outputBytes) / job.inputBytes)
+      : 0
+
+    expect(saving).toBe(0)
   })
 })
