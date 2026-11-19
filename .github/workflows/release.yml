@@ -95,8 +95,9 @@ jobs:
 
       - name: Build production desktop bundle
         if: steps.filter.outputs.skip != 'true'
+        shell: bash
         run: |
-          rm -rf src-tauri/target/release/bundle
+          rm -rf src-tauri/target/release/bundle || true
           bunx tauri build
 
       - name: Prepare staged artifacts

@@ -25,4 +25,3 @@ pub fn silent_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Co
     }
     cmd
 }
-
