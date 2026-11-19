@@ -308,7 +308,7 @@ fn make_output_name(relative: &Path, extension: &str, copy: bool) -> Result<Path
 }
 
 fn verify_decode(ffmpeg: &Path, output: &Path, control: Option<&Control>) -> Result<()> {
-    let mut command = Command::new(ffmpeg);
+    let mut command = crate::silent_command(ffmpeg);
     command
         .args(["-hide_banner", "-nostdin", "-v", "error", "-xerror", "-i"])
         .arg(output)
@@ -318,7 +318,7 @@ fn verify_decode(ffmpeg: &Path, output: &Path, control: Option<&Control>) -> Res
 }
 
 fn frame_hashes(ffmpeg: &Path, source: &Path, control: Option<&Control>) -> Result<Vec<String>> {
-    let mut command = Command::new(ffmpeg);
+    let mut command = crate::silent_command(ffmpeg);
     command
         .args(["-hide_banner", "-nostdin", "-v", "error", "-i"])
         .arg(source)
@@ -341,7 +341,7 @@ pub fn ssim_score(
     output: &Path,
     control: Option<&Control>,
 ) -> Result<f64> {
-    let mut command = Command::new(ffmpeg);
+    let mut command = crate::silent_command(ffmpeg);
     command
         .args(["-hide_banner", "-nostdin", "-i"])
         .arg(source)
@@ -378,7 +378,7 @@ pub fn psnr_score(
     output: &Path,
     control: Option<&Control>,
 ) -> Result<f64> {
-    let mut command = Command::new(ffmpeg);
+    let mut command = crate::silent_command(ffmpeg);
     command
         .args(["-hide_banner", "-nostdin", "-i"])
         .arg(source)
@@ -736,7 +736,7 @@ pub fn run_one_with_registry(
         }
         Decision::Encode { codec: "ffv1", .. } => {
             // Use explicit argv, never invoke a shell; passthrough retains timestamps.
-            let mut command = Command::new(ffmpeg);
+            let mut command = crate::silent_command(ffmpeg);
             command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
             if !trim_args.is_empty() {
                 command.args(&trim_args);
@@ -798,7 +798,7 @@ pub fn run_one_with_registry(
                 });
 
                 if let Some(hw) = hw_enc {
-                    let mut hw_cmd = Command::new(ffmpeg);
+                    let mut hw_cmd = crate::silent_command(ffmpeg);
                     hw_cmd.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
                     if !trim_args.is_empty() {
                         hw_cmd.args(&trim_args);
@@ -844,7 +844,7 @@ pub fn run_one_with_registry(
             }
 
             if !encoded_with_hw {
-                let mut command = Command::new(ffmpeg);
+                let mut command = crate::silent_command(ffmpeg);
                 command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
                 if !trim_args.is_empty() {
                     command.args(&trim_args);
@@ -924,7 +924,7 @@ pub fn run_one_with_registry(
                 });
 
                 if let Some(hw) = hw_enc {
-                    let mut hw_cmd = Command::new(ffmpeg);
+                    let mut hw_cmd = crate::silent_command(ffmpeg);
                     hw_cmd.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
                     if !trim_args.is_empty() {
                         hw_cmd.args(&trim_args);
@@ -973,7 +973,7 @@ pub fn run_one_with_registry(
             }
 
             if !encoded_with_hw {
-                let mut command = Command::new(ffmpeg);
+                let mut command = crate::silent_command(ffmpeg);
                 command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
                 if !trim_args.is_empty() {
                     command.args(&trim_args);
@@ -1042,7 +1042,7 @@ pub fn run_one_with_registry(
             crf,
             container,
         } => {
-            let mut command = Command::new(ffmpeg);
+            let mut command = crate::silent_command(ffmpeg);
             command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
             if !trim_args.is_empty() {
                 command.args(&trim_args);
@@ -1099,7 +1099,7 @@ pub fn run_one_with_registry(
             crf,
             ..
         } => {
-            let mut command = Command::new(ffmpeg);
+            let mut command = crate::silent_command(ffmpeg);
             command.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
             if !trim_args.is_empty() {
                 command.args(&trim_args);
@@ -1167,7 +1167,7 @@ pub fn run_one_with_registry(
             let passlog_str = passlog_prefix.to_string_lossy().to_string();
 
             // Pass 1: Analysis & MB-tree generation
-            let mut command_pass1 = Command::new(ffmpeg);
+            let mut command_pass1 = crate::silent_command(ffmpeg);
             command_pass1.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
             if !trim_args.is_empty() {
                 command_pass1.args(&trim_args);
@@ -1204,7 +1204,7 @@ pub fn run_one_with_registry(
             run_command_cancellable(&mut command_pass1, "Smart 2-Pass ABR (Pass 1)", control)?;
 
             // Pass 2: Final bitstream encoding
-            let mut command_pass2 = Command::new(ffmpeg);
+            let mut command_pass2 = crate::silent_command(ffmpeg);
             command_pass2.args(["-hide_banner", "-nostdin", "-v", "error", "-y"]);
             if !trim_args.is_empty() {
                 command_pass2.args(&trim_args);

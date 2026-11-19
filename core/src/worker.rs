@@ -74,7 +74,17 @@ fn terminate_pid_graceful(pid: u32) {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn terminate_pid_graceful(pid: u32) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let _ = std::process::Command::new("taskkill")
+        .creation_flags(CREATE_NO_WINDOW)
+        .args(["/F", "/T", "/PID", &pid.to_string()])
+        .output();
+}
+
+#[cfg(not(any(unix, windows)))]
 fn terminate_pid_graceful(_pid: u32) {}
 
 impl Control {

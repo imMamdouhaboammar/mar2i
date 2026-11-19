@@ -25,6 +25,7 @@ struct Runtime {
     control: Mutex<Option<Arc<Control>>>,
     selection: Mutex<Option<Selection>>,
     error: Mutex<Option<String>>,
+    single_control: Mutex<Option<Arc<Control>>>,
 }
 
 #[derive(Serialize, Debug)]
@@ -317,10 +318,13 @@ fn batch_status(runtime: State<'_, Arc<Runtime>>) -> Result<StatusResult, String
             elapsed_ms: job.elapsed_ms,
         })
         .collect();
+    let single_control = runtime.single_control.lock().unwrap().clone();
+    let is_cancelled = control.as_ref().is_some_and(|value| value.is_cancelled())
+        || single_control.as_ref().is_some_and(|value| value.is_cancelled());
     Ok(StatusResult {
         running: runtime.running.load(Ordering::SeqCst),
         paused: control.as_ref().is_some_and(|value| value.is_paused()),
-        cancelled: control.as_ref().is_some_and(|value| value.is_cancelled()),
+        cancelled: is_cancelled,
         error: runtime.error.lock().unwrap().clone(),
         files: summary.files,
         completed: summary.completed,
@@ -337,17 +341,31 @@ fn batch_status(runtime: State<'_, Arc<Runtime>>) -> Result<StatusResult, String
 
 #[tauri::command]
 fn control_batch(action: String, runtime: State<'_, Arc<Runtime>>) -> Result<(), String> {
-    let control = runtime
-        .control
-        .lock()
-        .unwrap()
-        .clone()
-        .ok_or_else(|| "لا توجد دفعة بدأت معالجتها بعد".to_owned())?;
-    match action.as_str() {
-        "pause" => control.pause(),
-        "resume" => control.resume(),
-        "cancel" => control.cancel(),
-        _ => return Err("إجراء غير معروف".into()),
+    let mut controlled = false;
+
+    if let Some(control) = runtime.control.lock().unwrap().clone() {
+        controlled = true;
+        match action.as_str() {
+            "pause" => control.pause(),
+            "resume" => control.resume(),
+            "cancel" => control.cancel(),
+            _ => return Err("إجراء غير معروف".into()),
+        }
+    }
+
+    if let Some(control) = runtime.single_control.lock().unwrap().clone() {
+        controlled = true;
+        match action.as_str() {
+            "pause" => control.pause(),
+            "resume" => control.resume(),
+            "cancel" => control.cancel(),
+            _ => return Err("إجراء غير معروف".into()),
+        }
+    }
+
+    if !controlled {
+        // Return Ok(()) rather than failing so frontend doesn't throw if already finished
+        return Ok(());
     }
     Ok(())
 }
@@ -374,15 +392,15 @@ fn open_output_directory(
     }
 
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg(&target).status();
+    let result = mar2i_core::silent_command("open").arg(&target).status();
     #[cfg(target_os = "windows")]
     let result = {
         let path_str = target.to_string_lossy().to_string();
         let clean = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str);
-        std::process::Command::new("explorer").arg(clean).status()
+        mar2i_core::silent_command("explorer").arg(clean).status()
     };
     #[cfg(target_os = "linux")]
-    let result = std::process::Command::new("xdg-open").arg(&target).status();
+    let result = mar2i_core::silent_command("xdg-open").arg(&target).status();
 
     match result {
         Ok(status) if status.success() => Ok(()),
@@ -402,9 +420,13 @@ struct BatchSavingsEstimate {
 }
 
 #[tauri::command]
-fn detect_hardware_encoders() -> Result<mar2i_core::hardware::HardwareReport, String> {
-    let ffmpeg = media_binary("ffmpeg");
-    Ok(mar2i_core::hardware::detect_hardware(&ffmpeg))
+async fn detect_hardware_encoders() -> Result<mar2i_core::hardware::HardwareReport, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let ffmpeg = media_binary("ffmpeg");
+        Ok(mar2i_core::hardware::detect_hardware(&ffmpeg))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -605,6 +627,7 @@ async fn compress_single_video(
     rotation_deg: Option<u16>,
     flip_horizontal: Option<bool>,
     hardware_acceleration: Option<bool>,
+    runtime: State<'_, Arc<Runtime>>,
 ) -> Result<CompressionSnapshotReport, String> {
     let source = PathBuf::from(&source_path);
     if !source.is_file() {
@@ -643,6 +666,17 @@ async fn compress_single_video(
             None
         };
 
+    let control = Arc::new(Control::default());
+    *runtime.single_control.lock().unwrap() = Some(Arc::clone(&control));
+
+    struct SingleControlGuard(Arc<Runtime>);
+    impl Drop for SingleControlGuard {
+        fn drop(&mut self) {
+            *self.0.single_control.lock().unwrap() = None;
+        }
+    }
+    let _guard = SingleControlGuard(Arc::clone(runtime.inner()));
+
     let outcome = mar2i_core::runner::run_one_with_options(
         &ffmpeg,
         &ffprobe,
@@ -658,9 +692,15 @@ async fn compress_single_video(
             trim_end,
             transform,
         },
-        None,
+        Some(&control),
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| {
+        if control.is_cancelled() || e.to_string().contains("cancelled") {
+            "تم إلغاء معالجة الفيديو بنجاح".to_string()
+        } else {
+            e.to_string()
+        }
+    })?;
 
     let elapsed_seconds = start.elapsed().as_secs_f64();
 
@@ -695,8 +735,8 @@ async fn compress_single_video(
         .and_then(|m| m.profile.audio_codecs.first().cloned())
         .unwrap_or_else(|| "aac".into());
 
-    let ssim = mar2i_core::runner::ssim_score(&ffmpeg, &source, &published_path, None).ok();
-    let psnr = mar2i_core::runner::psnr_score(&ffmpeg, &source, &published_path, None).ok();
+    let ssim = mar2i_core::runner::ssim_score(&ffmpeg, &source, &published_path, Some(&control)).ok();
+    let psnr = mar2i_core::runner::psnr_score(&ffmpeg, &source, &published_path, Some(&control)).ok();
 
     let reduction = if original_size > 0 && final_size < original_size {
         ((original_size - final_size) as f64 / original_size as f64) * 100.0
@@ -938,7 +978,7 @@ fn extract_audio_peaks(path: String, buckets: Option<usize>) -> Result<Vec<f32>,
     let num_buckets = buckets.unwrap_or(100).clamp(20, 500);
     let ffmpeg = media_binary("ffmpeg");
 
-    let output = std::process::Command::new(ffmpeg)
+    let output = mar2i_core::silent_command(ffmpeg)
         .args([
             "-hide_banner",
             "-nostdin",
@@ -1027,7 +1067,7 @@ fn extract_comparison_frames(
     let t = timestamp_sec.unwrap_or(1.0).max(0.0);
     let t_str = format!("{t:.2}");
 
-    let src_output = std::process::Command::new(&ffmpeg)
+    let src_output = mar2i_core::silent_command(&ffmpeg)
         .args([
             "-hide_banner",
             "-nostdin",
@@ -1058,7 +1098,7 @@ fn extract_comparison_frames(
 
     let (compressed_b64, ssim) =
         if let Some(ref out) = output_path.filter(|p| Path::new(p).is_file()) {
-            let comp_output = std::process::Command::new(&ffmpeg)
+            let comp_output = mar2i_core::silent_command(&ffmpeg)
                 .args([
                     "-hide_banner",
                     "-nostdin",
@@ -1090,7 +1130,7 @@ fn extract_comparison_frames(
                 _ => (original_b64.clone(), 0.985),
             }
         } else {
-            let preview_output = std::process::Command::new(&ffmpeg)
+            let preview_output = mar2i_core::silent_command(&ffmpeg)
                 .args([
                     "-hide_banner",
                     "-nostdin",

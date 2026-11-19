@@ -9,7 +9,6 @@
 use crate::policy::Mode;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
-use std::process::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -163,7 +162,7 @@ pub fn candidate_encoders() -> Vec<HardwareEncoder> {
 
 /// Probes whether a specific hardware encoder is supported by executing a 1-frame null transcode.
 pub fn probe_encoder(ffmpeg: &Path, encoder_name: &str) -> bool {
-    let output = Command::new(ffmpeg)
+    let output = crate::silent_command(ffmpeg)
         .args([
             "-hide_banner",
             "-nostdin",

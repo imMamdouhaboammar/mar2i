@@ -10,7 +10,6 @@ use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use tempfile::Builder;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -131,7 +130,7 @@ fn run_stratified_samples(
 
     for (i, &start_time) in sample_points.iter().enumerate() {
         let sample_out = temp_dir.path().join(format!("sample_{i}.mp4"));
-        let status = Command::new(ffmpeg)
+        let status = crate::silent_command(ffmpeg)
             .args([
                 "-hide_banner",
                 "-nostdin",

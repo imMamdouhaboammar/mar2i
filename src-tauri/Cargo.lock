@@ -66,7 +66,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "app"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "log",
@@ -1845,7 +1845,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "mar2i-core"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "libc",

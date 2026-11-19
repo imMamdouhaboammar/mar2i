@@ -16,7 +16,7 @@ describe('Native desktop truthfulness', () => {
     } }
     document.body.innerHTML = '<div id="app"></div>'
     await import('./main')
-    expect(document.querySelector('.sidebar-foot .version')?.textContent).toBe('الإصدار 0.2.2')
+    expect(document.querySelector('.sidebar-foot .version')?.textContent).toBe('الإصدار 0.2.3')
     expect(document.querySelector('#dynamic-island-slot')?.textContent).not.toContain('4.2x')
     document.querySelector<HTMLButtonElement>('[data-screen="results"]')?.click()
     expect(document.querySelector('.impact-certificate-card')).toBeNull()

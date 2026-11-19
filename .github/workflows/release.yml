@@ -95,7 +95,9 @@ jobs:
 
       - name: Build production desktop bundle
         if: steps.filter.outputs.skip != 'true'
-        run: bunx tauri build
+        run: |
+          rm -rf src-tauri/target/release/bundle
+          bunx tauri build
 
       - name: Prepare staged artifacts
         if: steps.filter.outputs.skip != 'true'
@@ -128,7 +130,7 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           if [[ "$TAG" != v* ]]; then
-            TAG="v0.2.2"
+            TAG="v0.2.3"
           fi
           echo "Publishing artifacts to release $TAG..."
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "مرئي (Mar2i) $TAG" --notes "Production release $TAG with UI craftsmanship improvements, golden smart compression, and full offline security guarantees."

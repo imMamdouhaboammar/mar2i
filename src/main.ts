@@ -781,7 +781,7 @@ function renderSettings(): string {
 function dialogMarkup(): string {
   if (state.dialog === 'output') return `<dialog id="app-dialog" class="app-dialog" aria-labelledby="dialog-heading"><form method="dialog"><h2 id="dialog-heading">مجلد حفظ النتائج</h2><p>اكتب اسم المجلد الذي تود ظهوره في المعاينة</p><label for="output-directory-name">اسم المجلد</label><input id="output-directory-name" value="${escapeHtml(state.outputName)}" required maxlength="120" /><div class="dialog-actions">${button('اعتماد', 'confirm-output', 'primary')}${button('إلغاء', 'close-dialog', 'outline')}</div></form></dialog>`
 
-  if (state.dialog === 'cancel') return `<dialog id="app-dialog" class="app-dialog" aria-labelledby="dialog-heading"><h2 id="dialog-heading">${isDesktop ? 'إلغاء المهام المنتظرة؟' : 'إلغاء معاينة المعالجة؟'}</h2><p>${isDesktop ? 'المهام الحالية ستنتهي أولًا، ولن تبدأ مهام جديدة، والملفات الأصلية ستظل محفوظة' : 'ستعود إلى إعداد الدفعة، ولن تتغير أي ملفات أصلية'}</p><div class="dialog-actions">${button(isDesktop ? 'تأكيد الإلغاء' : 'العودة للدفعة', 'confirm-cancel', 'danger')}${button('متابعة المعالجة', 'close-dialog', 'outline')}</div></dialog>`
+  if (state.dialog === 'cancel') return `<dialog id="app-dialog" class="app-dialog" aria-labelledby="dialog-heading"><h2 id="dialog-heading">${isDesktop ? 'إلغاء المعالجة الجارية؟' : 'إلغاء معاينة المعالجة؟'}</h2><p>${isDesktop ? 'سيتم إيقاف المعالجة فورًا، وإلغاء جميع العمليات الجارية، وحفظ الملفات الأصلية دون تغيير.' : 'ستعود إلى إعداد الدفعة، ولن تتغير أي ملفات أصلية.'}</p><div class="dialog-actions">${button(isDesktop ? 'تأكيد الإيقاف والإلغاء' : 'العودة للدفعة', 'confirm-cancel', 'danger')}${button('متابعة المعالجة', 'close-dialog', 'outline')}</div></dialog>`
 
   if (state.dialog === 'results') return `<dialog id="app-dialog" class="app-dialog" aria-labelledby="dialog-heading"><h2 id="dialog-heading">مجلد النتائج</h2><p>هذه نسخة لمعاينة الواجهة، ولم تُنتج ملفات مضغوطة أو يُنشأ مجلد نتائج على جهازك بعد</p><div class="dialog-actions">${button('فهمت', 'close-dialog', 'primary')}</div></dialog>`
 
@@ -982,6 +982,9 @@ function render(): void {
       onItemAction: (_id, act) => {
         if (act === 'inspect') {
           state.activeProbeFile = queueItems[0]?.name ?? 'إرشادات الطواف.mp4'
+          render()
+        } else if (act === 'cancel') {
+          state.dialog = 'cancel'
           render()
         }
       },
@@ -1360,7 +1363,13 @@ async function handleNativeAction(action: string): Promise<boolean> {
 
       changeScreen('results')
     } catch (err) {
-      showError(err instanceof Error ? err : String(err))
+      const msg = err instanceof Error ? err.message : String(err)
+
+      if (msg.includes('cancelled') || msg.includes('إلغاء')) {
+        state.notice = 'تم إلغاء معالجة الفيديو بناءً على طلبك'
+      } else {
+        showError(err instanceof Error ? err : String(err))
+      }
     } finally {
       state.singleFileCompressing = false
       render()
@@ -1630,7 +1639,13 @@ async function handleNativeAction(action: string): Promise<boolean> {
 
         changeScreen('results')
       } catch (error) {
-        showError(error instanceof Error ? error : String(error))
+        const msg = error instanceof Error ? error.message : String(error)
+
+        if (msg.includes('cancelled') || msg.includes('إلغاء')) {
+          state.notice = 'تم إلغاء معالجة الفيديو بناءً على طلبك'
+        } else {
+          showError(error instanceof Error ? error : String(error))
+        }
       } finally {
         state.singleFileCompressing = false
         render()
@@ -1675,6 +1690,7 @@ async function handleNativeAction(action: string): Promise<boolean> {
 
   if (action === 'confirm-cancel') {
     state.dialog = null
+    state.singleFileCompressing = false
 
     try {
       await nativeControl('cancel')
@@ -1682,6 +1698,9 @@ async function handleNativeAction(action: string): Promise<boolean> {
     } catch (error) {
       showError(error instanceof Error ? error : String(error))
     }
+
+    state.notice = 'تم إيقاف المعالجة وإلغاء المهمة فورًا'
+    render()
 
     return true
   }
@@ -1953,7 +1972,8 @@ root.addEventListener('click', async (event) => {
     case 'confirm-cancel':
       stopTimer()
       state.paused = true
-      state.progress = 34
+      state.singleFileCompressing = false
+      state.progress = 0
       changeScreen('new')
       break
     case 'confirm-output': {

@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct VideoDetails {
@@ -183,7 +182,7 @@ pub fn inspect(ffprobe: &Path, path: &Path) -> Result<InspectedMedia> {
         bail!("source must be a regular file, not a symbolic link");
     }
 
-    let mut command = Command::new(ffprobe);
+    let mut command = crate::silent_command(ffprobe);
     command
         .args([
             "-hide_banner",
