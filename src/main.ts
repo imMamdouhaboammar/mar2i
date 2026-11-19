@@ -335,7 +335,7 @@ function renderNew(): string {
         </div>
         <div class="source-btn-group">
           ${button('استعراض مجلد', 'select-source', 'outline')}
-          ${button('ملف فيديو فردي', 'pick-single-video', 'outline')}
+          ${button('ملف فردي', 'pick-single-video', 'outline')}
         </div>
       </div>
       ${folderField('مجلد الحفظ', state.outputName, 'select-output', 'output-value')}

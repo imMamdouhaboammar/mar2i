@@ -178,6 +178,7 @@ pub fn probe_encoder(ffmpeg: &Path, encoder_name: &str) -> bool {
             "null",
             "-",
         ])
+        .stdin(std::process::Stdio::null())
         .output();
 
     match output {

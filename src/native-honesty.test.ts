@@ -16,7 +16,7 @@ describe('Native desktop truthfulness', () => {
     } }
     document.body.innerHTML = '<div id="app"></div>'
     await import('./main')
-    expect(document.querySelector('.sidebar-foot .version')?.textContent).toBe('الإصدار 0.2.4')
+    expect(document.querySelector('.sidebar-foot .version')?.textContent).toBe('الإصدار 0.2.5')
     expect(document.querySelector('#dynamic-island-slot')?.textContent).not.toContain('4.2x')
     document.querySelector<HTMLButtonElement>('[data-screen="results"]')?.click()
     expect(document.querySelector('.impact-certificate-card')).toBeNull()
@@ -44,6 +44,8 @@ describe('Native desktop truthfulness', () => {
     expect(codecSelect).not.toBeNull()
     expect(codecSelect?.tagName).toBe('SELECT')
     expect(document.querySelector('.folder-value[data-action="select-source"]')).not.toBeNull()
+    expect(document.querySelector('.source-btn-group [data-action="select-source"]')?.textContent).toContain('استعراض مجلد')
+    expect(document.querySelector('.source-btn-group [data-action="pick-single-video"]')?.textContent).toContain('ملف فردي')
 
     if (codecSelect) {
       codecSelect.value = 'hevc'

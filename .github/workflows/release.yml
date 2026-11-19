@@ -117,6 +117,25 @@ jobs:
             mkdir -p "$STAGING_DIR"
             cp -R "$APP_PATH" "$STAGING_DIR/"
             ln -s /Applications "$STAGING_DIR/Applications"
+
+            cat << 'EOF' > "$STAGING_DIR/تشغيل لأول مرة (حل مشكلة تالف).command"
+#!/bin/bash
+clear
+echo "=================================================="
+echo "  مرئي (Mar2i) — إعداد التشغيل الأول وإزالة الحظر  "
+echo "=================================================="
+echo ""
+echo "جارٍ إزالة علامة الحظر (Gatekeeper Quarantine)..."
+xattr -cr /Applications/Mar2i.app 2>/dev/null || true
+DIR="$(cd "$(dirname "$0")" && pwd)"
+xattr -cr "$DIR/Mar2i.app" 2>/dev/null || true
+
+echo "✓ تم فك الحظر بنجاح!"
+echo "جارٍ فتح التطبيق الآن..."
+open /Applications/Mar2i.app 2>/dev/null || open "$DIR/Mar2i.app" 2>/dev/null || true
+EOF
+            chmod +x "$STAGING_DIR/تشغيل لأول مرة (حل مشكلة تالف).command"
+
             mkdir -p src-tauri/target/release/bundle/dmg
 
             VERSION="$(node -p "require('./src-tauri/tauri.conf.json').version")"
